@@ -118,3 +118,15 @@
   color: #f85149;
   margin-top: 0.3rem;
 }
+
+.upload-item__ocr {
+  font-size: 0.75rem;
+  color: var(--accent-purple);
+  margin-top: 0.3rem;
+  animation: blink 1.2s ease-in-out infinite;
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}

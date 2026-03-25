@@ -1,12 +1,13 @@
 """
-PDF Processor — CP03
+PDF Processor — CP03 + CP04
 Extracts text from each page using pdfplumber.
-Pages with < 80 characters are flagged as scanned (handled by OCR in CP04).
+Pages with < 80 characters are flagged as scanned.
+OCR is applied to scanned pages in server.py after this step.
 """
 
 import uuid
+import io
 import pdfplumber
-from pathlib import Path
 from dataclasses import dataclass, field
 
 
@@ -34,11 +35,12 @@ def process_pdf(file_bytes: bytes, filename: str) -> DocumentResult:
     """
     Parse a PDF from raw bytes.
     Returns a DocumentResult with per-page text and scanned flags.
+    OCR for scanned pages is handled separately by ocr_processor.
     """
     doc_id = str(uuid.uuid4())
     pages: list[PageResult] = []
 
-    with pdfplumber.open(file_bytes) as pdf:
+    with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
         for i, page in enumerate(pdf.pages):
             raw = page.extract_text() or ""
             text = raw.strip()

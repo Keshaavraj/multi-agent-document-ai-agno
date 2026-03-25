@@ -21,7 +21,7 @@ export default function PDFUploader({ onUploaded }) {
     const entries = valid.map(f => ({
       id: crypto.randomUUID(),
       name: f.name,
-      status: 'pending',   // pending | uploading | done | error
+      status: 'pending',   // pending | uploading | processing | done | error
       progress: 0,
       result: null,
       error: null,
@@ -44,8 +44,10 @@ export default function PDFUploader({ onUploaded }) {
         headers: { 'Content-Type': 'multipart/form-data' },
         onUploadProgress: evt => {
           const pct = Math.round((evt.loaded / evt.total) * 100)
+          // Once bytes are sent, switch to 'processing' (OCR may run server-side)
+          const nextStatus = pct >= 100 ? 'processing' : 'uploading'
           setQueue(prev => prev.map(e =>
-            e.id === entry.id ? { ...e, progress: pct } : e
+            e.id === entry.id ? { ...e, status: nextStatus, progress: pct } : e
           ))
         },
       })
@@ -108,6 +110,7 @@ export default function PDFUploader({ onUploaded }) {
                 <span className="upload-item__icon">
                   {e.status === 'done' && '✅'}
                   {e.status === 'error' && '❌'}
+                  {e.status === 'processing' && '🔍'}
                   {(e.status === 'uploading' || e.status === 'pending') && '⏳'}
                 </span>
                 <span className="upload-item__name">{e.name}</span>
@@ -116,11 +119,11 @@ export default function PDFUploader({ onUploaded }) {
 
               {e.status === 'uploading' && (
                 <div className="upload-item__bar">
-                  <div
-                    className="upload-item__fill"
-                    style={{ width: `${e.progress}%` }}
-                  />
+                  <div className="upload-item__fill" style={{ width: `${e.progress}%` }} />
                 </div>
+              )}
+              {e.status === 'processing' && (
+                <p className="upload-item__ocr">Running OCR on scanned pages…</p>
               )}
 
               {e.status === 'done' && e.result && (

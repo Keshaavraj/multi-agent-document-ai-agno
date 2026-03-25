@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 
 from knowledge.pdf_processor import process_pdf
+from knowledge.ocr_processor import ocr_scanned_pages
 
 load_dotenv()
 
@@ -22,8 +23,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# In-memory document registry  {doc_id: DocumentResult}
-# Replaced by LanceDB in CP05
+# In-memory document registry {doc_id: DocumentResult}
+# Replaced by LanceDB persistence in CP05
 DOC_REGISTRY: dict = {}
 
 
@@ -42,9 +43,18 @@ async def upload_pdf(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail="File exceeds 20 MB limit.")
 
     try:
-        result = process_pdf(io.BytesIO(raw), file.filename)
+        # Step 1 — extract text with pdfplumber
+        result = process_pdf(raw, file.filename)
+
+        # Step 2 — OCR any scanned pages with Llama 4 Scout
+        if result.scanned_pages > 0:
+            result.pages = ocr_scanned_pages(raw, result.pages)
+            # Recount after OCR
+            result.text_pages = sum(1 for p in result.pages if not p.is_scanned)
+            result.scanned_pages = sum(1 for p in result.pages if p.is_scanned)
+
     except Exception as e:
-        raise HTTPException(status_code=422, detail=f"PDF parsing failed: {e}")
+        raise HTTPException(status_code=422, detail=f"PDF processing failed: {e}")
 
     DOC_REGISTRY[result.doc_id] = result
 
