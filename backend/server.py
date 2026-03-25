@@ -15,8 +15,10 @@ from knowledge.document_processor import process_document, ALLOWED_EXTENSIONS
 from knowledge.ocr_processor import ocr_scanned_pages
 from storage.vector_store import ingest_document, retrieve, delete_document_vectors
 from storage.session_store import get_history, append_turn, clear_session, session_stats
-from agents.rag_agent import build_context, format_retrieval_meta
-from agents.team import create_team, classify_intent
+from agents.rag_agent import build_context, format_retrieval_meta, create_rag_agent
+from agents.summary_agent import create_summary_agent
+from agents.analyst_agent import create_analyst_agent
+from agents.team import classify_intent
 
 load_dotenv()
 
@@ -118,6 +120,7 @@ async def upload_pdf(request: Request, file: UploadFile = File(...)):
         )
 
     try:
+        import gc
         result = process_document(raw, file.filename)
 
         if result.scanned_pages > 0:
@@ -125,6 +128,8 @@ async def upload_pdf(request: Request, file: UploadFile = File(...)):
             result.text_pages    = sum(1 for p in result.pages if not p.is_scanned)
             result.scanned_pages = sum(1 for p in result.pages if p.is_scanned)
 
+        del raw   # free pdf bytes before embedding — reduces peak memory
+        gc.collect()
         chunk_count = ingest_document(result)
 
     except ValueError as e:
@@ -158,8 +163,13 @@ async def chat(request: Request, req: ChatRequest):
     # Load conversation history for this session
     history   = get_history(req.session_id)
 
-    # Build the multi-agent team with injected context
-    team = create_team(context)
+    # Route directly to the right agent — avoids fragile LLM tool-call routing
+    if intent == "summary":
+        agent = create_summary_agent(context)
+    elif intent == "analyst":
+        agent = create_analyst_agent(context)
+    else:
+        agent = create_rag_agent(context)
 
     async def event_stream():
         # Event 1 — retrieval metadata + routing decision + session info
@@ -171,15 +181,14 @@ async def chat(request: Request, req: ChatRequest):
         try:
             loop = asyncio.get_event_loop()
 
-            def run_team():
-                # Pass conversation history so the team has prior context
-                return list(team.run(
+            def run_agent():
+                return list(agent.run(
                     req.message,
                     messages=history,
                     stream=True,
                 ))
 
-            response_chunks = await loop.run_in_executor(None, run_team)
+            response_chunks = await loop.run_in_executor(None, run_agent)
 
             for chunk in response_chunks:
                 content = getattr(chunk, "content", None) or ""

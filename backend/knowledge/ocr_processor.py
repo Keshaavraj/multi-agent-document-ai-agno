@@ -5,6 +5,7 @@ sends all pages concurrently to Llama 4 Scout (Groq vision API),
 and returns the extracted text per page.
 """
 
+import gc
 import os
 import base64
 import fitz          # PyMuPDF
@@ -14,7 +15,7 @@ from groq import Groq
 client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
 
 OCR_MODEL     = "meta-llama/llama-4-scout-17b-16e-instruct"
-MAX_OCR_PAGES = 8      # cap Groq vision API calls per upload
+MAX_OCR_PAGES = 4      # reduced from 8 — halves peak memory on Render 512MB
 OCR_ZOOM      = 1.5    # lower than original 2.0 — reduces memory & payload size
 OCR_SYSTEM    = (
     "You are a precise document OCR engine. "
@@ -75,9 +76,11 @@ def ocr_scanned_pages(pdf_bytes: bytes, pages: list) -> list:
 
     lookup = {p.page_num: p for p in to_ocr}
 
-    # Fire all Groq calls concurrently
+    # Fire all Groq calls concurrently, then free the image data immediately
     with ThreadPoolExecutor(max_workers=MAX_OCR_PAGES) as pool:
         futures = {pool.submit(_ocr_one, pn, b64): pn for pn, b64 in b64_map.items()}
+        del b64_map   # free base64 image strings — each can be 1-2 MB
+        gc.collect()
         for future in as_completed(futures):
             pn = futures[future]
             try:
