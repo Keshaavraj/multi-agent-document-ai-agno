@@ -1,0 +1,120 @@
+.uploader {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+
+/* ── Drop Zone ── */
+.uploader__zone {
+  border: 2px dashed var(--border);
+  border-radius: 12px;
+  padding: 1.6rem 1rem;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+  background: var(--bg-card);
+}
+
+.uploader__zone:hover,
+.uploader__zone--drag {
+  border-color: var(--accent-blue);
+  background: rgba(47, 129, 247, 0.06);
+}
+
+.uploader__zone-icon {
+  font-size: 2rem;
+  display: block;
+  margin-bottom: 0.5rem;
+}
+
+.uploader__zone-text {
+  font-size: 0.9rem;
+  color: var(--text-primary);
+  margin-bottom: 0.25rem;
+}
+
+.uploader__link {
+  color: var(--accent-blue);
+  text-decoration: underline;
+}
+
+.uploader__zone-hint {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+/* ── Queue ── */
+.uploader__queue {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.upload-item {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.7rem 0.9rem;
+  transition: border-color 0.2s;
+}
+
+.upload-item--done  { border-color: rgba(63, 185, 80, 0.35); }
+.upload-item--error { border-color: rgba(248, 81, 73, 0.35); }
+.upload-item--uploading { border-color: rgba(47, 129, 247, 0.35); }
+
+.upload-item__header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.upload-item__icon { font-size: 0.9rem; }
+
+.upload-item__name {
+  flex: 1;
+  font-size: 0.83rem;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.upload-item__remove {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 0.8rem;
+  padding: 0 0.2rem;
+  line-height: 1;
+}
+.upload-item__remove:hover { color: var(--text-primary); }
+
+/* Progress bar */
+.upload-item__bar {
+  height: 3px;
+  background: var(--border);
+  border-radius: 2px;
+  margin-top: 0.5rem;
+  overflow: hidden;
+}
+
+.upload-item__fill {
+  height: 100%;
+  background: var(--accent-blue);
+  border-radius: 2px;
+  transition: width 0.2s;
+}
+
+.upload-item__meta {
+  font-size: 0.75rem;
+  color: var(--accent-green);
+  margin-top: 0.3rem;
+}
+
+.upload-item__error {
+  font-size: 0.75rem;
+  color: #f85149;
+  margin-top: 0.3rem;
+}
