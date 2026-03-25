@@ -30,6 +30,9 @@ export default function ChatPage() {
   const abortRef    = useRef(null)
   const fileRef     = useRef(null)
 
+  // Backend warm-up (Render free tier cold start)
+  const [backendStatus, setBackendStatus] = useState('checking') // checking | ready | cold
+
   // Session
   const [sessionId,     setSessionId]     = useState('')
   const [sessionTurns,  setSessionTurns]  = useState(0)
@@ -62,12 +65,30 @@ export default function ChatPage() {
     setSessionId(s.session_id)
     setSelectedDocs(s.selected_docs || [])
     setSidebarOpen(s.sidebar_open ?? true)
+    checkBackend()
     fetchDocs()
   }, [])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
+
+  // ── Backend health check (Render cold start) ──────────
+  const checkBackend = async () => {
+    setBackendStatus('checking')
+    // Poll until healthy — Render free tier can take up to 50s to wake
+    for (let i = 0; i < 12; i++) {
+      try {
+        await axios.get(`${BACKEND}/api/health`, { timeout: 5000 })
+        setBackendStatus('ready')
+        return
+      } catch {
+        setBackendStatus('cold')
+        await new Promise(r => setTimeout(r, 5000))
+      }
+    }
+    setBackendStatus('cold')
+  }
 
   // ── Document management ───────────────────────────────
   const fetchDocs = async () => {
@@ -384,6 +405,14 @@ export default function ChatPage() {
             Agents Active
           </div>
         </div>
+
+        {/* Backend warm-up banner */}
+        {backendStatus !== 'ready' && (
+          <div className={`warmup-banner warmup-banner--${backendStatus}`}>
+            {backendStatus === 'checking' && '⏳ Connecting to backend…'}
+            {backendStatus === 'cold'     && '🔄 Backend is warming up (Render free tier — usually takes 20–40s)…'}
+          </div>
+        )}
 
         {/* Messages */}
         <div className="chat-messages">

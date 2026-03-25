@@ -20,6 +20,7 @@ jobs:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -39,6 +40,8 @@ jobs:
         working-directory: frontend
         run: npm run build
         env:
+          # Set this secret in GitHub → Settings → Secrets → Actions
+          # Value: your Render backend URL e.g. https://doc-intelligence-ai-backend.onrender.com
           VITE_BACKEND_URL: ${{ secrets.VITE_BACKEND_URL }}
 
       - name: Setup Pages

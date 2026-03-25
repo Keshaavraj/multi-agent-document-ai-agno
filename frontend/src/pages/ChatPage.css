@@ -327,6 +327,27 @@
   animation: pulse 2s infinite;
 }
 
+/* ── Warm-up banner ── */
+.warmup-banner {
+  padding: 0.5rem 1.2rem;
+  font-size: 0.82rem;
+  text-align: center;
+  flex-shrink: 0;
+}
+.warmup-banner--checking {
+  background: rgba(47, 129, 247, 0.1);
+  color: var(--accent-blue);
+}
+.warmup-banner--cold {
+  background: rgba(240, 136, 62, 0.1);
+  color: var(--accent-orange);
+  animation: blink 2s ease-in-out infinite;
+}
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.5; }
+}
+
 /* ── Messages ── */
 .chat-messages {
   flex: 1;
