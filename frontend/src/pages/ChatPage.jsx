@@ -95,6 +95,7 @@ export default function ChatPage() {
     try {
       const res = await axios.get(`${BACKEND}/api/documents`)
       setDocs(res.data)
+      setBackendStatus('ready')
     } catch { /* backend not yet connected */ }
   }
 
