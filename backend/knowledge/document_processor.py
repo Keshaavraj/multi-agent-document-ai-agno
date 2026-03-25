@@ -8,8 +8,7 @@ import uuid
 import io
 from pathlib import Path
 
-import fitz                        # PyMuPDF — handles image → PDF conversion
-from docx import Document as Docx  # python-docx
+import fitz  # PyMuPDF — handles image → PDF conversion
 
 from knowledge.pdf_processor import process_pdf, DocumentResult, PageResult
 
@@ -39,6 +38,7 @@ def process_document(file_bytes: bytes, filename: str) -> DocumentResult:
 # ── DOCX ──────────────────────────────────────────────────────────────────────
 
 def _process_docx(file_bytes: bytes, filename: str) -> DocumentResult:
+    from docx import Document as Docx  # lazy import — only needed for DOCX files
     doc_id = str(uuid.uuid4())
     doc    = Docx(io.BytesIO(file_bytes))
 

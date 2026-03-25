@@ -72,7 +72,13 @@ export default function PDFUploader({ onUploaded, onStatusChange }) {
       })
       onUploaded?.(r)
     } catch (err) {
-      const msg = err.response?.data?.detail || err.message || 'Upload failed'
+      const status = err.response?.status
+      const raw    = err.response?.data?.detail || err.message || 'Upload failed'
+      const msg    = status === 429
+        ? 'Rate limit reached — max 3 uploads per 10 minutes. Please wait and try again.'
+        : status === 400
+          ? raw
+          : `Upload failed: ${raw}`
       setQueue(prev => prev.map(e =>
         e.id === entry.id ? { ...e, status: 'error', error: msg } : e
       ))
