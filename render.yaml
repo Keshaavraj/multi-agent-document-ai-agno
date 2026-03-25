@@ -5,7 +5,7 @@ services:
     region: singapore
     plan: free
     rootDir: backend
-    buildCommand: pip install -r requirements.txt
+    buildCommand: pip install -r requirements.txt && python -c "from fastembed import TextEmbedding; list(TextEmbedding('BAAI/bge-small-en-v1.5').embed(['warmup']))"
     startCommand: sh -c "uvicorn server:app --host 0.0.0.0 --port ${PORT}"
     healthCheckPath: /api/health
     autoDeploy: true
