@@ -4,15 +4,19 @@ import './PDFUploader.css'
 
 const BACKEND = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000'
 const MAX_SIZE_MB = 20
+const ALLOWED_EXTS = ['.pdf', '.docx', '.doc', '.txt', '.png', '.jpg', '.jpeg']
 
-export default function PDFUploader({ onUploaded }) {
+export default function PDFUploader({ onUploaded, onStatusChange }) {
   const inputRef = useRef(null)
   const [dragging, setDragging] = useState(false)
-  const [queue, setQueue] = useState([])   // {name, status, progress, result, error}
+  const [queue, setQueue]       = useState([])   // {name, status, progress, result, error}
+
+  const isOcring = queue.some(e => e.status === 'processing')
 
   const addFiles = files => {
     const valid = Array.from(files).filter(f => {
-      if (f.type !== 'application/pdf') return false
+      const ext = '.' + f.name.split('.').pop().toLowerCase()
+      if (!ALLOWED_EXTS.includes(ext)) return false
       if (f.size > MAX_SIZE_MB * 1024 * 1024) return false
       return true
     })
@@ -35,6 +39,7 @@ export default function PDFUploader({ onUploaded }) {
     setQueue(prev => prev.map(e =>
       e.id === entry.id ? { ...e, status: 'uploading', progress: 0 } : e
     ))
+    onStatusChange?.({ filename: entry.name, status: 'uploading' })
 
     const form = new FormData()
     form.append('file', entry.file)
@@ -44,25 +49,34 @@ export default function PDFUploader({ onUploaded }) {
         headers: { 'Content-Type': 'multipart/form-data' },
         onUploadProgress: evt => {
           const pct = Math.round((evt.loaded / evt.total) * 100)
-          // Once bytes are sent, switch to 'processing' (OCR may run server-side)
           const nextStatus = pct >= 100 ? 'processing' : 'uploading'
           setQueue(prev => prev.map(e =>
             e.id === entry.id ? { ...e, status: nextStatus, progress: pct } : e
           ))
+          if (pct >= 100) {
+            onStatusChange?.({ filename: entry.name, status: 'processing' })
+          }
         },
       })
 
+      const r = res.data
       setQueue(prev => prev.map(e =>
         e.id === entry.id
-          ? { ...e, status: 'done', progress: 100, result: res.data }
+          ? { ...e, status: 'done', progress: 100, result: r }
           : e
       ))
-      onUploaded?.(res.data)
+      onStatusChange?.({
+        filename: entry.name,
+        status: 'done',
+        info: `${r.total_pages} pages · ${r.chunks} chunks indexed.`,
+      })
+      onUploaded?.(r)
     } catch (err) {
       const msg = err.response?.data?.detail || err.message || 'Upload failed'
       setQueue(prev => prev.map(e =>
         e.id === entry.id ? { ...e, status: 'error', error: msg } : e
       ))
+      onStatusChange?.({ filename: entry.name, status: 'error', info: msg })
     }
   }
 
@@ -87,19 +101,27 @@ export default function PDFUploader({ onUploaded }) {
         <input
           ref={inputRef}
           type="file"
-          accept=".pdf"
+          accept=".pdf,.docx,.doc,.txt,.png,.jpg,.jpeg"
           multiple
           hidden
           onChange={e => addFiles(e.target.files)}
         />
         <span className="uploader__zone-icon">📄</span>
         <p className="uploader__zone-text">
-          Drop PDFs here or <span className="uploader__link">browse</span>
+          Drop files here or <span className="uploader__link">browse</span>
         </p>
         <p className="uploader__zone-hint">
-          Text or scanned · Multiple files · Max {MAX_SIZE_MB} MB each
+          PDF · DOCX · TXT · PNG · JPG · Max {MAX_SIZE_MB} MB each
         </p>
       </div>
+
+      {/* OCR banner */}
+      {isOcring && (
+        <div className="uploader__ocr-banner">
+          <span className="uploader__ocr-banner-spinner">⟳</span>
+          <span>Running OCR on scanned pages — please wait, this can take up to 30 seconds…</span>
+        </div>
+      )}
 
       {/* Queue */}
       {queue.length > 0 && (

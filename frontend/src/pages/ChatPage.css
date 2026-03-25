@@ -645,14 +645,156 @@
 .send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 .send-btn--loading { background: var(--bg-card); }
 
+/* ── Document processing status banner ── */
+.doc-status-banner {
+  padding: 0.65rem 1.2rem;
+  font-size: 0.85rem;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border);
+}
+.doc-status-banner--uploading {
+  background: rgba(47, 129, 247, 0.1);
+  color: var(--accent-blue);
+}
+.doc-status-banner--processing {
+  background: rgba(163, 113, 247, 0.12);
+  color: var(--accent-purple);
+  animation: blink 1.5s ease-in-out infinite;
+}
+.doc-status-banner--done {
+  background: rgba(63, 185, 80, 0.1);
+  color: #3fb950;
+}
+.doc-status-banner--error {
+  background: rgba(248, 81, 73, 0.1);
+  color: #f85149;
+}
+
+/* ── In-chat upload zone (welcome screen) ── */
+.chat-upload-zone {
+  width: 100%;
+  max-width: 480px;
+  margin-top: 0.5rem;
+}
+.chat-upload-limits {
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  text-align: center;
+  margin-top: 0.4rem;
+}
+
+/* ── Inline upload panel (above input bar, mid-chat) ── */
+.chat-upload-panel {
+  border-top: 1px solid var(--border);
+  background: var(--bg-secondary);
+  padding: 0.8rem 1.2rem;
+  flex-shrink: 0;
+}
+.chat-upload-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 0.7rem;
+}
+
+/* ── Sidebar backdrop (mobile only) ── */
+.sidebar-backdrop { display: none; }
+
 /* ── Responsive ── */
 @media (max-width: 680px) {
+
+  /* Sidebar — fixed overlay with backdrop */
+  .sidebar-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.55);
+    z-index: 199;
+  }
+
   .chat-sidebar {
     position: fixed;
     top: 0; left: 0; bottom: 0;
-    z-index: 100;
-    width: 260px;
+    z-index: 200;
+    width: 280px;
+    box-shadow: 4px 0 24px rgba(0, 0, 0, 0.5);
   }
-  .chat-sidebar--closed { width: 0; }
-  .message-bubble { max-width: 92%; }
+  .chat-sidebar--closed { width: 0; overflow: hidden; }
+
+  /* Sidebar open button — bigger touch target */
+  .sidebar-open-btn {
+    padding: 0.65rem 0.9rem;
+    font-size: 1.1rem;
+  }
+
+  /* Topbar */
+  .chat-topbar {
+    padding: 0.6rem 0.8rem;
+    gap: 0.5rem;
+  }
+  .chat-topbar-sub { display: none; }
+  .chat-topbar-name { font-size: 0.88rem; }
+  .chat-topbar-status { font-size: 0.72rem; }
+
+  /* Backend / doc-status banners */
+  .warmup-banner,
+  .doc-status-banner {
+    font-size: 0.78rem;
+    padding: 0.5rem 0.8rem;
+  }
+
+  /* Messages area */
+  .chat-messages { padding: 0.9rem 0.6rem; gap: 0.9rem; }
+  .message-bubble { max-width: 95%; }
+  .message-bubble--assistant { max-width: 100%; }
+  .message-content { font-size: 0.85rem; }
+
+  /* Welcome screen */
+  .chat-welcome { padding: 1.5rem 0.5rem; gap: 0.6rem; }
+  .chat-welcome h2 { font-size: 1.2rem; }
+  .chat-welcome p { font-size: 0.88rem; }
+  .chat-upload-zone { max-width: 100%; }
+
+  /* Inline upload panel */
+  .chat-upload-panel { padding: 0.7rem 0.8rem; }
+  .chat-upload-limits { font-size: 0.68rem; }
+
+  /* Retrieval chunks */
+  .retrieval-chunk-header { flex-wrap: wrap; gap: 0.3rem; }
+
+  /* Metrics grid */
+  .metrics-grid { gap: 0.35rem; }
+  .metric-value { font-size: 0.9rem; }
+
+  /* Input bar — comfortable thumb reach */
+  .chat-input-bar {
+    padding: 0.6rem 0.7rem;
+    gap: 0.4rem;
+  }
+  .input-icon-btn {
+    padding: 0.55rem 0.5rem;
+    font-size: 1.1rem;
+    min-width: 40px;
+    min-height: 40px;
+  }
+  .chat-input {
+    font-size: 0.88rem;
+    padding: 0.6rem 0.8rem;
+    border-radius: 10px;
+  }
+  .send-btn {
+    width: 40px;
+    height: 40px;
+    font-size: 0.9rem;
+  }
+
+  /* Sidebar inner touch targets */
+  .icon-btn { padding: 0.5rem; min-width: 36px; min-height: 36px; }
+  .doc-item { padding: 0.55rem 0.5rem; }
+  .doc-item-delete { padding: 0.4rem; font-size: 0.9rem; }
+  .btn-new-chat { padding: 0.55rem; font-size: 0.82rem; }
+  .btn-upload-cta { padding: 0.65rem 1.2rem; font-size: 0.9rem; }
 }

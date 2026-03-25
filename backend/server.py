@@ -11,7 +11,7 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from dotenv import load_dotenv
 
-from knowledge.pdf_processor import process_pdf
+from knowledge.document_processor import process_document, ALLOWED_EXTENSIONS
 from knowledge.ocr_processor import ocr_scanned_pages
 from storage.vector_store import ingest_document, retrieve, delete_document_vectors
 from storage.session_store import get_history, append_turn, clear_session, session_stats
@@ -95,8 +95,13 @@ async def health():
 @limiter.limit("3/10minute")
 async def upload_pdf(request: Request, file: UploadFile = File(...)):
 
-    if file.content_type != "application/pdf":
-        raise HTTPException(status_code=400, detail="Only PDF files are accepted.")
+    from pathlib import Path
+    ext = Path(file.filename or "").suffix.lower()
+    if ext not in ALLOWED_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported file type '{ext}'. Accepted: PDF, DOCX, TXT, PNG, JPG"
+        )
 
     raw = await file.read()
 
@@ -113,7 +118,7 @@ async def upload_pdf(request: Request, file: UploadFile = File(...)):
         )
 
     try:
-        result = process_pdf(raw, file.filename)
+        result = process_document(raw, file.filename)
 
         if result.scanned_pages > 0:
             result.pages         = ocr_scanned_pages(raw, result.pages)

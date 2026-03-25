@@ -7,9 +7,10 @@
 const KEY = 'doc_ai_session'
 
 const defaults = {
-  session_id:   null,     // UUID — generated on first load
-  selected_docs: [],      // doc_ids the user has selected
-  sidebar_open:  true,    // sidebar visibility preference
+  session_id:       null,   // UUID — generated on first load
+  selected_docs:    [],     // doc_ids the user has selected
+  sidebar_open:     true,   // left sidebar visibility
+  right_panel_open: true,   // right documents panel visibility
 }
 
 function load() {
@@ -47,6 +48,12 @@ export function saveSelectedDocs(doc_ids) {
 export function saveSidebarState(open) {
   const data = load()
   data.sidebar_open = open
+  save(data)
+}
+
+export function saveRightPanelState(open) {
+  const data = load()
+  data.right_panel_open = open
   save(data)
 }
 

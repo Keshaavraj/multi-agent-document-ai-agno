@@ -25,30 +25,33 @@ const QUICK_PROMPTS = [
 
 export default function ChatPage() {
   const navigate = useNavigate()
-  const bottomRef   = useRef(null)
-  const inputRef    = useRef(null)
-  const abortRef    = useRef(null)
-  const fileRef     = useRef(null)
+  const bottomRef = useRef(null)
+  const inputRef  = useRef(null)
+  const abortRef  = useRef(null)
 
   // Backend warm-up (Render free tier cold start)
   const [backendStatus, setBackendStatus] = useState('checking') // checking | ready | cold
 
   // Session
-  const [sessionId,     setSessionId]     = useState('')
-  const [sessionTurns,  setSessionTurns]  = useState(0)
+  const [sessionId,    setSessionId]    = useState('')
+  const [sessionTurns, setSessionTurns] = useState(0)
 
   // Documents
-  const [docs,          setDocs]          = useState([])
-  const [selectedDocs,  setSelectedDocs]  = useState([])
+  const [docs,         setDocs]         = useState([])
+  const [selectedDocs, setSelectedDocs] = useState([])
 
   // UI
-  const [sidebarOpen,   setSidebarOpen]   = useState(true)
-  const [showUploader,  setShowUploader]  = useState(false)
+  const [sidebarOpen,  setSidebarOpen]  = useState(true)
+  const [showUploader, setShowUploader] = useState(false)
+
+  // Document processing status — shown as banner in main chat area
+  // null | { filename, status: 'uploading'|'processing'|'done'|'error', info }
+  const [docStatus, setDocStatus] = useState(null)
 
   // Chat
-  const [messages,      setMessages]      = useState([])
-  const [input,         setInput]         = useState('')
-  const [loading,       setLoading]       = useState(false)
+  const [messages, setMessages] = useState([])
+  const [input,    setInput]    = useState('')
+  const [loading,  setLoading]  = useState(false)
 
   // Metrics
   const [metrics, setMetrics] = useState({
@@ -59,12 +62,15 @@ export default function ChatPage() {
     responseTimes: [],
   })
 
+  const isProcessing = docStatus && (docStatus.status === 'uploading' || docStatus.status === 'processing')
+
   // ── Init ──────────────────────────────────────────────
   useEffect(() => {
     const s = getSession()
     setSessionId(s.session_id)
     setSelectedDocs(s.selected_docs || [])
-    setSidebarOpen(s.sidebar_open ?? true)
+    const isMobile = window.innerWidth <= 680
+    setSidebarOpen(isMobile ? false : (s.sidebar_open ?? true))
     checkBackend()
     fetchDocs()
   }, [])
@@ -73,10 +79,17 @@ export default function ChatPage() {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
+  // Auto-clear 'done' status after 3 seconds
+  useEffect(() => {
+    if (docStatus?.status === 'done') {
+      const t = setTimeout(() => setDocStatus(null), 3000)
+      return () => clearTimeout(t)
+    }
+  }, [docStatus])
+
   // ── Backend health check (Render cold start) ──────────
   const checkBackend = async () => {
     setBackendStatus('checking')
-    // Poll until healthy — Render free tier can take up to 50s to wake
     for (let i = 0; i < 12; i++) {
       try {
         await axios.get(`${BACKEND}/api/health`, { timeout: 5000 })
@@ -128,7 +141,6 @@ export default function ChatPage() {
       if (prev.find(d => d.doc_id === result.doc_id)) return prev
       return [...prev, result]
     })
-    // Auto-select newly uploaded doc
     setSelectedDocs(prev => {
       if (prev.includes(result.doc_id)) return prev
       const next = [...prev, result.doc_id]
@@ -136,6 +148,11 @@ export default function ChatPage() {
       return next
     })
     setShowUploader(false)
+  }
+
+  // Called by PDFUploader on every status change
+  const onDocStatusChange = ({ filename, status, info }) => {
+    setDocStatus({ filename, status, info })
   }
 
   // ── Sidebar toggle ────────────────────────────────────
@@ -174,19 +191,17 @@ export default function ChatPage() {
     setLoading(true)
     const startTime = Date.now()
 
-    // Add user message
     setMessages(prev => [...prev, { role: 'user', content: msg }])
 
-    // Add placeholder assistant message
     const assistantId = crypto.randomUUID()
     setMessages(prev => [...prev, {
-      id:          assistantId,
-      role:        'assistant',
-      content:     '',
-      retrieval:   null,
-      agent:       null,
+      id:           assistantId,
+      role:         'assistant',
+      content:      '',
+      retrieval:    null,
+      agent:        null,
       responseTime: null,
-      loading:     true,
+      loading:      true,
     }])
 
     try {
@@ -202,7 +217,7 @@ export default function ChatPage() {
         throw new Error(err.detail || 'Request failed')
       }
 
-      const reader = res.body.getReader()
+      const reader  = res.body.getReader()
       const decoder = new TextDecoder()
       let buffer = ''
 
@@ -250,7 +265,6 @@ export default function ChatPage() {
         }
       }
 
-      // Finalize metrics
       const elapsed = parseFloat(((Date.now() - startTime) / 1000).toFixed(2))
       setMessages(prev => prev.map(m =>
         m.id === assistantId ? { ...m, responseTime: elapsed, loading: false } : m
@@ -291,10 +305,9 @@ export default function ChatPage() {
   return (
     <div className="chat-layout">
 
-      {/* ── Sidebar ── */}
+      {/* ── Left Sidebar: metrics + agents + session + doc list ── */}
       <aside className={`chat-sidebar ${sidebarOpen ? 'chat-sidebar--open' : 'chat-sidebar--closed'}`}>
 
-        {/* Header */}
         <div className="sidebar-header">
           <button className="sidebar-brand" onClick={() => navigate('/')}>⚙️ Doc AI</button>
           <div className="sidebar-header-actions">
@@ -346,45 +359,39 @@ export default function ChatPage() {
           <button className="btn-new-chat" onClick={newChat}>New Chat</button>
         </div>
 
-        {/* Documents */}
+        {/* Document list — select which docs to query */}
         <div className="sidebar-section sidebar-section--docs">
-          <div className="sidebar-section-header">
-            <h3 className="sidebar-section-title">📄 Documents</h3>
-            <button className="btn-upload-small" onClick={() => setShowUploader(v => !v)}>+ Upload</button>
-          </div>
-
-          {showUploader && (
-            <div className="uploader-inline">
-              <PDFUploader onUploaded={onUploaded} />
-            </div>
+          <h3 className="sidebar-section-title">📄 My Documents</h3>
+          {docs.length === 0 ? (
+            <p className="sidebar-empty">No documents yet. Use the chat to upload one.</p>
+          ) : (
+            <ul className="doc-list">
+              {docs.map(d => (
+                <li key={d.doc_id} className={`doc-item ${selectedDocs.includes(d.doc_id) ? 'doc-item--selected' : ''}`}>
+                  <label className="doc-item-label">
+                    <input
+                      type="checkbox"
+                      checked={selectedDocs.includes(d.doc_id)}
+                      onChange={() => toggleDoc(d.doc_id)}
+                    />
+                    <div className="doc-item-info">
+                      <span className="doc-item-name">{d.filename}</span>
+                      <span className="doc-item-meta">{d.total_pages}p · {d.text_pages} text · {d.scanned_pages} OCR</span>
+                    </div>
+                  </label>
+                  <button className="doc-item-delete" onClick={() => deleteDoc(d.doc_id)} title="Remove document">🗑</button>
+                </li>
+              ))}
+            </ul>
           )}
-
-          {docs.length === 0 && !showUploader && (
-            <p className="sidebar-empty">No documents yet. Upload a PDF to start.</p>
-          )}
-
-          <ul className="doc-list">
-            {docs.map(d => (
-              <li key={d.doc_id} className={`doc-item ${selectedDocs.includes(d.doc_id) ? 'doc-item--selected' : ''}`}>
-                <label className="doc-item-label">
-                  <input
-                    type="checkbox"
-                    checked={selectedDocs.includes(d.doc_id)}
-                    onChange={() => toggleDoc(d.doc_id)}
-                  />
-                  <div className="doc-item-info">
-                    <span className="doc-item-name">{d.filename}</span>
-                    <span className="doc-item-meta">{d.total_pages}p · {d.text_pages} text · {d.scanned_pages} OCR</span>
-                  </div>
-                </label>
-                <button className="doc-item-delete" onClick={() => deleteDoc(d.doc_id)} title="Remove document">🗑</button>
-              </li>
-            ))}
-          </ul>
         </div>
+
       </aside>
 
-      {/* ── Sidebar toggle (when closed) ── */}
+      {/* Dark backdrop — tapping closes sidebar on mobile */}
+      {sidebarOpen && <div className="sidebar-backdrop" onClick={toggleSidebar} />}
+
+      {/* Sidebar open button (when closed) */}
       {!sidebarOpen && (
         <button className="sidebar-open-btn" onClick={toggleSidebar}>☰</button>
       )}
@@ -415,22 +422,47 @@ export default function ChatPage() {
           </div>
         )}
 
+        {/* Document processing banner — shown in main chat area */}
+        {docStatus && (
+          <div className={`doc-status-banner doc-status-banner--${docStatus.status}`}>
+            {docStatus.status === 'uploading' && (
+              <>⬆️ Uploading <strong>{docStatus.filename}</strong>… please wait.</>
+            )}
+            {docStatus.status === 'processing' && (
+              <>🔍 Processing <strong>{docStatus.filename}</strong> — OCR running on scanned pages. This can take up to 30 seconds. <strong>Please wait before asking questions.</strong></>
+            )}
+            {docStatus.status === 'done' && (
+              <>✅ <strong>{docStatus.filename}</strong> is ready! {docStatus.info} You can now ask questions.</>
+            )}
+            {docStatus.status === 'error' && (
+              <>❌ Failed to process <strong>{docStatus.filename}</strong>: {docStatus.info}</>
+            )}
+          </div>
+        )}
+
         {/* Messages */}
         <div className="chat-messages">
+
           {messages.length === 0 && (
             <div className="chat-welcome">
               <div className="chat-welcome-icon">⚙️</div>
               <h2>Doc Intelligence AI</h2>
-              <p>Upload a PDF and ask anything — precise answers, summaries, and data extraction via multi-agent AI.</p>
-              {docs.length === 0 && (
-                <button className="btn-upload-cta" onClick={() => { setSidebarOpen(true); setShowUploader(true) }}>
-                  📄 Upload your first document
-                </button>
+              <p>Upload a document and ask anything — precise answers, summaries, and data extraction via multi-agent AI.</p>
+
+              {/* Inline uploader — shown in welcome when no docs yet OR when triggered */}
+              {(docs.length === 0 || showUploader) && (
+                <div className="chat-upload-zone">
+                  <PDFUploader onUploaded={onUploaded} onStatusChange={onDocStatusChange} />
+                  <p className="chat-upload-limits">
+                    PDF · DOCX · TXT · PNG · JPG &nbsp;·&nbsp; Max 20 MB · 40 pages · 10 docs · 3 uploads / 10 min
+                  </p>
+                </div>
               )}
-              {docs.length > 0 && selectedDocs.length === 0 && (
-                <p className="chat-hint">Select a document from the sidebar to start chatting.</p>
+
+              {docs.length > 0 && selectedDocs.length === 0 && !showUploader && (
+                <p className="chat-hint">☑️ Select a document from the sidebar to start chatting.</p>
               )}
-              {selectedDocs.length > 0 && (
+              {selectedDocs.length > 0 && !showUploader && (
                 <div className="quick-prompts">
                   <p className="quick-prompts-label">Try asking:</p>
                   {QUICK_PROMPTS.map((p, i) => (
@@ -444,18 +476,15 @@ export default function ChatPage() {
           {messages.map((msg, i) => (
             <div key={i} className={`message message--${msg.role}`}>
 
-              {/* User message */}
               {msg.role === 'user' && (
                 <div className="message-bubble message-bubble--user">
                   {msg.content}
                 </div>
               )}
 
-              {/* Assistant message */}
               {msg.role === 'assistant' && (
                 <div className="message-bubble message-bubble--assistant">
 
-                  {/* Agent + response time badge */}
                   {msg.agent && (
                     <div className="message-meta-row">
                       <span
@@ -470,7 +499,6 @@ export default function ChatPage() {
                     </div>
                   )}
 
-                  {/* Retrieval panel — inner workings */}
                   {msg.retrieval && msg.retrieval.length > 0 && (
                     <details className="retrieval-panel">
                       <summary className="retrieval-panel-summary">
@@ -498,7 +526,6 @@ export default function ChatPage() {
                     </details>
                   )}
 
-                  {/* Response content */}
                   {msg.loading && !msg.content && (
                     <div className="typing-indicator">
                       <span /><span /><span />
@@ -518,23 +545,26 @@ export default function ChatPage() {
           <div ref={bottomRef} />
         </div>
 
+        {/* Inline uploader panel — shown above input bar when 📎 clicked mid-chat */}
+        {showUploader && messages.length > 0 && (
+          <div className="chat-upload-panel">
+            <div className="chat-upload-panel-header">
+              <span>📤 Upload a document</span>
+              <button className="icon-btn" onClick={() => setShowUploader(false)}>✕</button>
+            </div>
+            <PDFUploader onUploaded={onUploaded} onStatusChange={onDocStatusChange} />
+            <p className="chat-upload-limits">
+              PDF · DOCX · TXT · PNG · JPG &nbsp;·&nbsp; Max 20 MB · 40 pages · 10 docs · 3 uploads / 10 min
+            </p>
+          </div>
+        )}
+
         {/* Input bar */}
         <div className="chat-input-bar">
-          <input
-            ref={fileRef}
-            type="file"
-            accept=".pdf"
-            multiple
-            hidden
-            onChange={() => {
-              setSidebarOpen(true)
-              setShowUploader(true)
-            }}
-          />
           <button
             className="input-icon-btn"
-            title="Upload PDF"
-            onClick={() => { setSidebarOpen(true); setShowUploader(true) }}
+            title="Upload a document"
+            onClick={() => setShowUploader(v => !v)}
           >
             📎
           </button>
@@ -542,25 +572,28 @@ export default function ChatPage() {
             ref={inputRef}
             className="chat-input"
             placeholder={
-              selectedDocs.length === 0
-                ? 'Select a document from the sidebar first…'
-                : 'Ask anything about your documents…'
+              isProcessing
+                ? '⏳ Document is processing — please wait…'
+                : selectedDocs.length === 0
+                  ? 'Select a document from the sidebar first…'
+                  : 'Ask anything about your documents…'
             }
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={onKeyDown}
             rows={1}
             maxLength={600}
-            disabled={loading}
+            disabled={loading || isProcessing}
           />
           <button
             className={`send-btn ${loading ? 'send-btn--loading' : ''}`}
             onClick={() => send()}
-            disabled={loading || !input.trim()}
+            disabled={loading || !input.trim() || isProcessing}
           >
             {loading ? '⏳' : '➤'}
           </button>
         </div>
+
       </main>
     </div>
   )

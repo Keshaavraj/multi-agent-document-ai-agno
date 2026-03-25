@@ -126,7 +126,48 @@
   animation: blink 1.2s ease-in-out infinite;
 }
 
+/* ── Prominent OCR banner ── */
+.uploader__ocr-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  background: rgba(163, 113, 247, 0.12);
+  border: 1px solid rgba(163, 113, 247, 0.4);
+  border-radius: 10px;
+  padding: 0.7rem 1rem;
+  font-size: 0.82rem;
+  color: var(--accent-purple);
+  font-weight: 500;
+}
+
+.uploader__ocr-banner-spinner {
+  font-size: 1.1rem;
+  animation: spin 1s linear infinite;
+  display: inline-block;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
 @keyframes blink {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.4; }
+}
+
+/* ── Mobile ── */
+@media (max-width: 680px) {
+  .uploader__zone { padding: 1.2rem 0.8rem; }
+  .uploader__zone-icon { font-size: 1.6rem; }
+  .uploader__zone-text { font-size: 0.85rem; }
+  .uploader__zone-hint { font-size: 0.7rem; }
+  .upload-item { padding: 0.6rem 0.7rem; }
+  .upload-item__name { font-size: 0.78rem; }
+  .upload-item__remove {
+    padding: 0.4rem;
+    min-width: 28px;
+    min-height: 28px;
+  }
+  .uploader__ocr-banner { font-size: 0.78rem; padding: 0.55rem 0.8rem; }
 }

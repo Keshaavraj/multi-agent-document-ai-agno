@@ -329,17 +329,29 @@
 
 /* ── Responsive ── */
 @media (max-width: 600px) {
-  .landing__nav {
-    padding: 0.8rem 1rem;
-  }
-  .landing__hero {
-    padding: 3rem 1rem 2.5rem;
-  }
+  .landing__nav { padding: 0.8rem 1rem; }
+
+  .landing__hero { padding: 3rem 1rem 2.5rem; }
+
   .landing__cta-row {
     flex-direction: column;
     align-items: stretch;
   }
-  .landing__stats {
-    gap: 1.5rem;
-  }
+
+  .landing__stats { gap: 1.5rem; }
+
+  /* Single-column grids on phones */
+  .features-grid { grid-template-columns: 1fr; }
+  .steps-grid    { grid-template-columns: 1fr; }
+
+  .landing__features,
+  .landing__steps { padding: 2.5rem 1rem; }
+
+  .landing__banner { padding: 3rem 1rem; }
+
+  .section-title { font-size: 1.4rem; }
+  .section-sub   { font-size: 0.9rem; }
+
+  /* Nav brand text */
+  .landing__nav-brand { font-size: 0.95rem; }
 }
