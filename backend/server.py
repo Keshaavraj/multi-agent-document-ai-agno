@@ -2,10 +2,13 @@ import io
 import json
 import asyncio
 import os
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 from dotenv import load_dotenv
 
 from knowledge.pdf_processor import process_pdf
@@ -15,7 +18,12 @@ from agents.rag_agent import build_context, create_rag_agent, format_retrieval_m
 
 load_dotenv()
 
+# ── Rate limiter ──────────────────────────────────────────
+limiter = Limiter(key_func=get_remote_address)
+
 app = FastAPI(title="Doc Intelligence AI", version="1.0.0")
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.add_middleware(
     CORSMiddleware,
@@ -29,6 +37,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ── Guards ────────────────────────────────────────────────
+MAX_FILE_MB   = 20
+MAX_DOCS      = 10    # total docs in registry — protects memory
+MAX_MSG_CHARS = 600   # prevent token abuse on chat
+
 # In-memory document registry {doc_id: DocumentResult}
 DOC_REGISTRY: dict = {}
 
@@ -36,36 +49,75 @@ DOC_REGISTRY: dict = {}
 # ── Request models ────────────────────────────────────────
 class ChatRequest(BaseModel):
     message:    str
-    doc_ids:    list[str]       # which documents to search
+    doc_ids:    list[str]
     session_id: str = "default"
+
+    @field_validator("message")
+    @classmethod
+    def message_not_empty(cls, v):
+        v = v.strip()
+        if not v:
+            raise ValueError("Message cannot be empty.")
+        if len(v) > MAX_MSG_CHARS:
+            raise ValueError(f"Message exceeds {MAX_MSG_CHARS} character limit.")
+        return v
+
+    @field_validator("doc_ids")
+    @classmethod
+    def doc_ids_not_empty(cls, v):
+        if not v:
+            raise ValueError("Select at least one document.")
+        if len(v) > MAX_DOCS:
+            raise ValueError("Too many documents selected.")
+        return v
 
 
 # ── Health ────────────────────────────────────────────────
 @app.get("/api/health")
 async def health():
-    return {"status": "ok", "service": "doc-intelligence-ai"}
+    return {
+        "status":    "ok",
+        "service":   "doc-intelligence-ai",
+        "docs_loaded": len(DOC_REGISTRY),
+        "docs_limit":  MAX_DOCS,
+    }
 
 
 # ── Upload ────────────────────────────────────────────────
 @app.post("/api/upload")
-async def upload_pdf(file: UploadFile = File(...)):
+@limiter.limit("3/10minute")          # 3 uploads per 10 min per IP
+async def upload_pdf(request: Request, file: UploadFile = File(...)):
+
     if file.content_type != "application/pdf":
         raise HTTPException(status_code=400, detail="Only PDF files are accepted.")
 
     raw = await file.read()
-    if len(raw) > 20 * 1024 * 1024:
-        raise HTTPException(status_code=400, detail="File exceeds 20 MB limit.")
+
+    if len(raw) > MAX_FILE_MB * 1024 * 1024:
+        raise HTTPException(
+            status_code=400,
+            detail=f"File exceeds {MAX_FILE_MB} MB limit. Please compress or split the document."
+        )
+
+    if len(DOC_REGISTRY) >= MAX_DOCS:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Maximum of {MAX_DOCS} documents reached. Delete an existing document to upload a new one."
+        )
 
     try:
         result = process_pdf(raw, file.filename)
 
         if result.scanned_pages > 0:
-            result.pages = ocr_scanned_pages(raw, result.pages)
+            result.pages         = ocr_scanned_pages(raw, result.pages)
             result.text_pages    = sum(1 for p in result.pages if not p.is_scanned)
             result.scanned_pages = sum(1 for p in result.pages if p.is_scanned)
 
         chunk_count = ingest_document(result)
 
+    except ValueError as e:
+        # Known validation errors (e.g. page limit exceeded)
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=422, detail=f"PDF processing failed: {e}")
 
@@ -83,34 +135,24 @@ async def upload_pdf(file: UploadFile = File(...)):
 
 # ── Chat (SSE) ────────────────────────────────────────────
 @app.post("/api/chat")
-async def chat(req: ChatRequest):
-    if not req.doc_ids:
-        raise HTTPException(status_code=400, detail="Select at least one document.")
-    if not req.message.strip():
-        raise HTTPException(status_code=400, detail="Message cannot be empty.")
+@limiter.limit("15/10minute")         # 15 messages per 10 min per IP
+async def chat(request: Request, req: ChatRequest):
 
-    # Retrieve relevant chunks
-    chunks = retrieve(req.message, req.doc_ids)
-    retrieval_meta = format_retrieval_meta(chunks)
-    context = build_context(chunks)
-
-    # Build agent with injected context
-    agent = create_rag_agent(context)
+    chunks    = retrieve(req.message, req.doc_ids)
+    ret_meta  = format_retrieval_meta(chunks)
+    context   = build_context(chunks)
+    agent     = create_rag_agent(context)
 
     async def event_stream():
-        # Event 1 — send retrieval metadata so UI can show inner workings
-        yield (
-            f"data: {json.dumps({'type': 'retrieval_meta', 'chunks': retrieval_meta})}\n\n"
-        )
+        # Retrieval metadata — recruiters see inner workings here
+        yield f"data: {json.dumps({'type': 'retrieval_meta', 'chunks': ret_meta})}\n\n"
 
-        # Event 2+ — stream agent tokens
         try:
             loop = asyncio.get_event_loop()
 
             def run_agent():
                 return list(agent.run(req.message, stream=True))
 
-            # Run sync Agno streaming in a thread to avoid blocking the event loop
             chunks_iter = await loop.run_in_executor(None, run_agent)
 
             for chunk in chunks_iter:
@@ -126,10 +168,7 @@ async def chat(req: ChatRequest):
     return StreamingResponse(
         event_stream(),
         media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no",
-        },
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
 

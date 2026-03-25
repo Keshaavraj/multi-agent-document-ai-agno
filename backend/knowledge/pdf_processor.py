@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 
 
 SCANNED_THRESHOLD = 80   # chars per page below this → treat as scanned
+MAX_PAGES = 40           # hard cap per PDF — protects Render 512 MB RAM
 
 
 @dataclass
@@ -41,6 +42,11 @@ def process_pdf(file_bytes: bytes, filename: str) -> DocumentResult:
     pages: list[PageResult] = []
 
     with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
+        if len(pdf.pages) > MAX_PAGES:
+            raise ValueError(
+                f"PDF has {len(pdf.pages)} pages — maximum allowed is {MAX_PAGES}. "
+                "Please split the document and upload sections separately."
+            )
         for i, page in enumerate(pdf.pages):
             raw = page.extract_text() or ""
             text = raw.strip()

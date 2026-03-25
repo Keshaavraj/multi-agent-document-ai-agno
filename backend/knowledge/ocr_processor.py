@@ -13,6 +13,7 @@ from groq import Groq
 client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
 
 OCR_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct"
+MAX_OCR_PAGES = 8   # cap Groq vision API calls per upload
 OCR_SYSTEM = (
     "You are a precise document OCR engine. "
     "Extract ALL text from the page exactly as it appears. "
@@ -71,14 +72,19 @@ def ocr_scanned_pages(pdf_bytes: bytes, pages: list) -> list:
     Returns the updated pages list.
     """
     updated = []
+    ocr_count = 0
     for page in pages:
         if page.is_scanned:
-            try:
-                ocr_text = ocr_page(pdf_bytes, page.page_num)
-                page.text = ocr_text
-                page.is_scanned = False   # now has text
-            except Exception as e:
-                # Keep flagged but add error note
-                page.text = f"[OCR failed for page {page.page_num}: {e}]"
+            if ocr_count >= MAX_OCR_PAGES:
+                # Cap reached — note it but don't call the API
+                page.text = f"[OCR skipped — limit of {MAX_OCR_PAGES} scanned pages per upload reached]"
+            else:
+                try:
+                    ocr_text = ocr_page(pdf_bytes, page.page_num)
+                    page.text = ocr_text
+                    page.is_scanned = False
+                    ocr_count += 1
+                except Exception as e:
+                    page.text = f"[OCR failed for page {page.page_num}: {e}]"
         updated.append(page)
     return updated

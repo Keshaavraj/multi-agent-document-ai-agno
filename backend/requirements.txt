@@ -11,3 +11,4 @@ lancedb==0.13.0
 fastembed==0.4.1
 openai==1.54.0
 groq==0.11.0
+slowapi==0.1.9
