@@ -14,6 +14,7 @@ from dotenv import load_dotenv
 from knowledge.pdf_processor import process_pdf
 from knowledge.ocr_processor import ocr_scanned_pages
 from storage.vector_store import ingest_document, retrieve, delete_document_vectors
+from storage.session_store import get_history, append_turn, clear_session, session_stats
 from agents.rag_agent import build_context, format_retrieval_meta
 from agents.team import create_team, classify_intent
 
@@ -40,11 +41,16 @@ app.add_middleware(
 
 # ── Guards ────────────────────────────────────────────────
 MAX_FILE_MB   = 20
-MAX_DOCS      = 10    # total docs in registry — protects memory
-MAX_MSG_CHARS = 600   # prevent token abuse on chat
+MAX_DOCS      = 10
+MAX_MSG_CHARS = 600
 
-# In-memory document registry {doc_id: DocumentResult}
 DOC_REGISTRY: dict = {}
+
+AGENT_LABELS = {
+    "rag":     "RAG Agent",
+    "summary": "Summary Agent",
+    "analyst": "Analyst Agent",
+}
 
 
 # ── Request models ────────────────────────────────────────
@@ -77,8 +83,8 @@ class ChatRequest(BaseModel):
 @app.get("/api/health")
 async def health():
     return {
-        "status":    "ok",
-        "service":   "doc-intelligence-ai",
+        "status":      "ok",
+        "service":     "doc-intelligence-ai",
         "docs_loaded": len(DOC_REGISTRY),
         "docs_limit":  MAX_DOCS,
     }
@@ -86,7 +92,7 @@ async def health():
 
 # ── Upload ────────────────────────────────────────────────
 @app.post("/api/upload")
-@limiter.limit("3/10minute")          # 3 uploads per 10 min per IP
+@limiter.limit("3/10minute")
 async def upload_pdf(request: Request, file: UploadFile = File(...)):
 
     if file.content_type != "application/pdf":
@@ -97,13 +103,13 @@ async def upload_pdf(request: Request, file: UploadFile = File(...)):
     if len(raw) > MAX_FILE_MB * 1024 * 1024:
         raise HTTPException(
             status_code=400,
-            detail=f"File exceeds {MAX_FILE_MB} MB limit. Please compress or split the document."
+            detail=f"File exceeds {MAX_FILE_MB} MB. Please compress or split the document."
         )
 
     if len(DOC_REGISTRY) >= MAX_DOCS:
         raise HTTPException(
             status_code=429,
-            detail=f"Maximum of {MAX_DOCS} documents reached. Delete an existing document to upload a new one."
+            detail=f"Maximum of {MAX_DOCS} documents reached. Delete one to upload a new file."
         )
 
     try:
@@ -117,7 +123,6 @@ async def upload_pdf(request: Request, file: UploadFile = File(...)):
         chunk_count = ingest_document(result)
 
     except ValueError as e:
-        # Known validation errors (e.g. page limit exceeded)
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=422, detail=f"PDF processing failed: {e}")
@@ -136,40 +141,57 @@ async def upload_pdf(request: Request, file: UploadFile = File(...)):
 
 # ── Chat (SSE) ────────────────────────────────────────────
 @app.post("/api/chat")
-@limiter.limit("15/10minute")         # 15 messages per 10 min per IP
+@limiter.limit("15/10minute")
 async def chat(request: Request, req: ChatRequest):
 
-    chunks       = retrieve(req.message, req.doc_ids)
-    ret_meta     = format_retrieval_meta(chunks)
-    context      = build_context(chunks)
-    intent       = classify_intent(req.message)   # 'rag' | 'summary' | 'analyst'
-    team         = create_team(context)
+    # Retrieve chunks + build context
+    chunks    = retrieve(req.message, req.doc_ids)
+    ret_meta  = format_retrieval_meta(chunks)
+    context   = build_context(chunks)
+    intent    = classify_intent(req.message)
 
-    AGENT_LABELS = {
-        "rag":     "RAG Agent",
-        "summary": "Summary Agent",
-        "analyst": "Analyst Agent",
-    }
+    # Load conversation history for this session
+    history   = get_history(req.session_id)
+
+    # Build the multi-agent team with injected context
+    team = create_team(context)
 
     async def event_stream():
-        # Event 1 — retrieval metadata + predicted agent routing
-        yield f"data: {json.dumps({'type': 'retrieval_meta', 'chunks': ret_meta, 'routed_to': AGENT_LABELS[intent], 'intent': intent})}\n\n"
+        # Event 1 — retrieval metadata + routing decision + session info
+        stats = session_stats(req.session_id)
+        yield f"data: {json.dumps({'type': 'retrieval_meta', 'chunks': ret_meta, 'routed_to': AGENT_LABELS[intent], 'intent': intent, 'session': stats})}\n\n"
+
+        full_response = []
 
         try:
             loop = asyncio.get_event_loop()
 
             def run_team():
-                return list(team.run(req.message, stream=True))
+                # Pass conversation history so the team has prior context
+                return list(team.run(
+                    req.message,
+                    messages=history,
+                    stream=True,
+                ))
 
             response_chunks = await loop.run_in_executor(None, run_team)
 
             for chunk in response_chunks:
                 content = getattr(chunk, "content", None) or ""
                 if content:
+                    full_response.append(content)
                     yield f"data: {json.dumps({'type': 'content', 'content': content})}\n\n"
 
         except Exception as e:
             yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+        finally:
+            # Persist this turn to session memory
+            if full_response:
+                append_turn(
+                    req.session_id,
+                    req.message,
+                    "".join(full_response),
+                )
 
         yield "data: [DONE]\n\n"
 
@@ -178,6 +200,19 @@ async def chat(request: Request, req: ChatRequest):
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+# ── Session ───────────────────────────────────────────────
+@app.delete("/api/session/{session_id}")
+async def reset_session(session_id: str):
+    """Clear conversation history for a session (New Chat button)."""
+    clear_session(session_id)
+    return {"cleared": session_id}
+
+
+@app.get("/api/session/{session_id}")
+async def get_session_info(session_id: str):
+    return session_stats(session_id)
 
 
 # ── Documents ─────────────────────────────────────────────
