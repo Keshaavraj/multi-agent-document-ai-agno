@@ -14,7 +14,8 @@ from dotenv import load_dotenv
 from knowledge.pdf_processor import process_pdf
 from knowledge.ocr_processor import ocr_scanned_pages
 from storage.vector_store import ingest_document, retrieve, delete_document_vectors
-from agents.rag_agent import build_context, create_rag_agent, format_retrieval_meta
+from agents.rag_agent import build_context, format_retrieval_meta
+from agents.team import create_team, classify_intent
 
 load_dotenv()
 
@@ -138,24 +139,31 @@ async def upload_pdf(request: Request, file: UploadFile = File(...)):
 @limiter.limit("15/10minute")         # 15 messages per 10 min per IP
 async def chat(request: Request, req: ChatRequest):
 
-    chunks    = retrieve(req.message, req.doc_ids)
-    ret_meta  = format_retrieval_meta(chunks)
-    context   = build_context(chunks)
-    agent     = create_rag_agent(context)
+    chunks       = retrieve(req.message, req.doc_ids)
+    ret_meta     = format_retrieval_meta(chunks)
+    context      = build_context(chunks)
+    intent       = classify_intent(req.message)   # 'rag' | 'summary' | 'analyst'
+    team         = create_team(context)
+
+    AGENT_LABELS = {
+        "rag":     "RAG Agent",
+        "summary": "Summary Agent",
+        "analyst": "Analyst Agent",
+    }
 
     async def event_stream():
-        # Retrieval metadata — recruiters see inner workings here
-        yield f"data: {json.dumps({'type': 'retrieval_meta', 'chunks': ret_meta})}\n\n"
+        # Event 1 — retrieval metadata + predicted agent routing
+        yield f"data: {json.dumps({'type': 'retrieval_meta', 'chunks': ret_meta, 'routed_to': AGENT_LABELS[intent], 'intent': intent})}\n\n"
 
         try:
             loop = asyncio.get_event_loop()
 
-            def run_agent():
-                return list(agent.run(req.message, stream=True))
+            def run_team():
+                return list(team.run(req.message, stream=True))
 
-            chunks_iter = await loop.run_in_executor(None, run_agent)
+            response_chunks = await loop.run_in_executor(None, run_team)
 
-            for chunk in chunks_iter:
+            for chunk in response_chunks:
                 content = getattr(chunk, "content", None) or ""
                 if content:
                     yield f"data: {json.dumps({'type': 'content', 'content': content})}\n\n"
