@@ -130,7 +130,8 @@ export default function PDFUploader({ onUploaded }) {
                 <p className="upload-item__meta">
                   {e.result.total_pages} pages ·{' '}
                   {e.result.text_pages} text ·{' '}
-                  {e.result.scanned_pages} scanned
+                  {e.result.scanned_pages} scanned ·{' '}
+                  {e.result.chunks} chunks indexed
                 </p>
               )}
 

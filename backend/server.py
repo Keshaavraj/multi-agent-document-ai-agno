@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 
 from knowledge.pdf_processor import process_pdf
 from knowledge.ocr_processor import ocr_scanned_pages
+from storage.vector_store import ingest_document, delete_document_vectors
 
 load_dotenv()
 
@@ -24,7 +25,6 @@ app.add_middleware(
 )
 
 # In-memory document registry {doc_id: DocumentResult}
-# Replaced by LanceDB persistence in CP05
 DOC_REGISTRY: dict = {}
 
 
@@ -49,9 +49,11 @@ async def upload_pdf(file: UploadFile = File(...)):
         # Step 2 — OCR any scanned pages with Llama 4 Scout
         if result.scanned_pages > 0:
             result.pages = ocr_scanned_pages(raw, result.pages)
-            # Recount after OCR
-            result.text_pages = sum(1 for p in result.pages if not p.is_scanned)
+            result.text_pages  = sum(1 for p in result.pages if not p.is_scanned)
             result.scanned_pages = sum(1 for p in result.pages if p.is_scanned)
+
+        # Step 3 — embed chunks and store in LanceDB
+        chunk_count = ingest_document(result)
 
     except Exception as e:
         raise HTTPException(status_code=422, detail=f"PDF processing failed: {e}")
@@ -59,11 +61,12 @@ async def upload_pdf(file: UploadFile = File(...)):
     DOC_REGISTRY[result.doc_id] = result
 
     return {
-        "doc_id": result.doc_id,
-        "filename": result.filename,
-        "total_pages": result.total_pages,
-        "text_pages": result.text_pages,
+        "doc_id":        result.doc_id,
+        "filename":      result.filename,
+        "total_pages":   result.total_pages,
+        "text_pages":    result.text_pages,
         "scanned_pages": result.scanned_pages,
+        "chunks":        chunk_count,
     }
 
 
@@ -71,10 +74,10 @@ async def upload_pdf(file: UploadFile = File(...)):
 async def list_documents():
     return [
         {
-            "doc_id": d.doc_id,
-            "filename": d.filename,
-            "total_pages": d.total_pages,
-            "text_pages": d.text_pages,
+            "doc_id":        d.doc_id,
+            "filename":      d.filename,
+            "total_pages":   d.total_pages,
+            "text_pages":    d.text_pages,
             "scanned_pages": d.scanned_pages,
         }
         for d in DOC_REGISTRY.values()
@@ -85,5 +88,6 @@ async def list_documents():
 async def delete_document(doc_id: str):
     if doc_id not in DOC_REGISTRY:
         raise HTTPException(status_code=404, detail="Document not found.")
+    delete_document_vectors(doc_id)
     del DOC_REGISTRY[doc_id]
     return {"deleted": doc_id}
