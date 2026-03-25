@@ -75,7 +75,6 @@ def create_team(context: str) -> Team:
         members=[rag_agent, summary_agent, analyst_agent],
         instructions=ORCHESTRATOR_INSTRUCTIONS,
         markdown=True,
-        stream=True,
         show_tool_calls=False,
     )
     return team
