@@ -242,6 +242,12 @@ export default function ChatPage() {
     })
   }
 
+  // ── Open uploader (closes sidebar on mobile) ──────────
+  const openUploader = () => {
+    if (window.innerWidth <= 680) setSidebarOpen(false)
+    setShowUploader(v => !v)
+  }
+
   // ── New chat ──────────────────────────────────────────
   const newChat = async () => {
     if (abortRef.current) abortRef.current.abort()
@@ -489,7 +495,7 @@ export default function ChatPage() {
               <button
                 className="doc-action-btn"
                 title="Upload new document"
-                onClick={() => setShowUploader(v => !v)}
+                onClick={openUploader}
               >+ Upload</button>
               {docs.length > 0 && (
                 <button
@@ -722,7 +728,7 @@ export default function ChatPage() {
           <button
             className="input-icon-btn"
             title="Upload a document"
-            onClick={() => setShowUploader(v => !v)}
+            onClick={openUploader}
           >
             <FiPaperclip size={18} />
           </button>
