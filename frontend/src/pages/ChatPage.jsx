@@ -62,7 +62,34 @@ export default function ChatPage() {
     responseTimes: [],
   })
 
-  const isProcessing = docStatus && (docStatus.status === 'uploading' || docStatus.status === 'processing')
+  const isProcessing  = docStatus && (docStatus.status === 'uploading' || docStatus.status === 'processing')
+  const noDocCountRef = useRef(0)
+
+  const getNoDocReply = (msg) => {
+    noDocCountRef.current += 1
+    const n = noDocCountRef.current
+    const lower = msg.toLowerCase()
+
+    if (n === 1) {
+      return "Hi! I'm **Document Intelligence AI** — I can analyze, summarize, extract data, and answer questions about your documents.\n\nUpload a PDF, Word doc, image, or text file using the **Upload** button in the sidebar to get started."
+    }
+    if (lower.match(/total|sum|calculat|invoice|bill|amount|price|cost|tax/)) {
+      return `I can calculate that for you — just upload the invoice or document containing those figures and ask me the same question.`
+    }
+    if (lower.match(/summar|overview|brief|tldr|key point/)) {
+      return `I'll generate a summary as soon as you upload a document. Drop a PDF or Word file in the sidebar.`
+    }
+    if (lower.match(/what|who|when|where|how|why|which|tell me|explain|describe/)) {
+      return `Good question — I can find that answer once you attach a document. Upload one from the sidebar and ask again.`
+    }
+    if (lower.match(/image|photo|chart|graph|diagram|picture/)) {
+      return `I can analyze images and visuals too — upload an image file (PNG, JPG) or a PDF containing diagrams and I'll describe what's in them.`
+    }
+    if (n >= 3) {
+      return `Please upload a document from the sidebar — I'm ready to help the moment you do.`
+    }
+    return `I need a document to work from. Upload one using the sidebar (PDF, Word, TXT, or image) and I'll get right to it.`
+  }
 
   // ── Init ──────────────────────────────────────────────
   useEffect(() => {
@@ -193,7 +220,7 @@ export default function ChatPage() {
         {
           id:           crypto.randomUUID(),
           role:         'assistant',
-          content:      "Hi! I'm **Document Intelligence AI** — I can analyze, summarize, and answer questions about your documents.\n\nTo get started, please upload a document using the **Upload** button in the sidebar (PDF, Word, TXT, or image files are supported), then select it to begin chatting.",
+          content:      getNoDocReply(msg),
           retrieval:    null,
           agent:        null,
           responseTime: null,
@@ -270,10 +297,18 @@ export default function ChatPage() {
               if (event.session) setSessionTurns(event.session.turns)
             }
 
+            if (event.type === 'consolidating') {
+              setMessages(prev => prev.map(m =>
+                m.id === assistantId
+                  ? { ...m, consolidating: true }
+                  : m
+              ))
+            }
+
             if (event.type === 'content') {
               setMessages(prev => prev.map(m =>
                 m.id === assistantId
-                  ? { ...m, content: m.content + event.content, loading: false }
+                  ? { ...m, content: m.content + event.content, loading: false, consolidating: false }
                   : m
               ))
             }
@@ -553,6 +588,11 @@ export default function ChatPage() {
                   {msg.loading && !msg.content && (
                     <div className="typing-indicator">
                       <span /><span /><span />
+                    </div>
+                  )}
+                  {msg.consolidating && msg.content && (
+                    <div className="consolidating-indicator">
+                      ✦ Consolidating findings…
                     </div>
                   )}
                   {msg.content && (

@@ -18,10 +18,18 @@ OCR_MODEL     = "meta-llama/llama-4-scout-17b-16e-instruct"
 MAX_OCR_PAGES = 4      # reduced from 8 — halves peak memory on Render 512MB
 OCR_ZOOM      = 1.5    # lower than original 2.0 — reduces memory & payload size
 OCR_SYSTEM    = (
-    "You are a precise document OCR engine. "
-    "Extract ALL text from the page exactly as it appears. "
-    "Preserve tables, lists, headings, and layout as closely as possible. "
-    "Return only the extracted text — no commentary, no explanations."
+    "You are a precise document vision engine. Analyse this page and return TWO sections:\n\n"
+    "**TEXT CONTENT**\n"
+    "Extract ALL text exactly as it appears. Preserve tables, lists, headings, and layout.\n\n"
+    "**VISUAL ELEMENTS**\n"
+    "Describe every non-text visual element present:\n"
+    "- Charts/graphs: type (bar, pie, line…), axes labels, key data points, trends\n"
+    "- Tables rendered as images: column headers and notable row data\n"
+    "- Diagrams/flowcharts: what they depict and key components\n"
+    "- Photos/illustrations: what is shown and any visible labels or captions\n"
+    "- Numbers/figures embedded in visuals: list them explicitly\n"
+    "If no visual elements exist, write 'None' under that section.\n"
+    "Return only these two sections — no other commentary."
 )
 
 

@@ -15,9 +15,11 @@ from knowledge.document_processor import process_document, ALLOWED_EXTENSIONS
 from knowledge.ocr_processor import ocr_scanned_pages
 from storage.vector_store import ingest_document, retrieve, delete_document_vectors
 from storage.session_store import get_history, append_turn, clear_session, session_stats
+from storage.job_store import create_job, get_job, complete_job, fail_job
 from agents.rag_agent import build_context, format_retrieval_meta, create_rag_agent
 from agents.summary_agent import create_summary_agent
 from agents.analyst_agent import create_analyst_agent
+from agents.consolidator_agent import create_consolidator_agent
 from agents.team import classify_intent
 
 load_dotenv()
@@ -92,11 +94,53 @@ async def health():
     }
 
 
+# ── Background processor ──────────────────────────────────
+async def _process_upload(job_id: str, raw: bytes, filename: str):
+    """
+    Runs entirely in a thread-pool executor so heavy work (pdfplumber,
+    OCR, fastembed) never blocks the event loop or hits Render's HTTP timeout.
+    """
+    loop = asyncio.get_event_loop()
+
+    def _run():
+        import gc
+
+        result = process_document(raw, filename)
+
+        if result.scanned_pages > 0:
+            result.pages         = ocr_scanned_pages(raw, result.pages)
+            result.text_pages    = sum(1 for p in result.pages if not p.is_scanned)
+            result.scanned_pages = sum(1 for p in result.pages if p.is_scanned)
+
+        gc.collect()
+        chunk_count = ingest_document(result)
+        return result, chunk_count
+
+    try:
+        result, chunk_count = await loop.run_in_executor(None, _run)
+        DOC_REGISTRY[result.doc_id] = result
+        complete_job(job_id, {
+            "doc_id":        result.doc_id,
+            "filename":      result.filename,
+            "total_pages":   result.total_pages,
+            "text_pages":    result.text_pages,
+            "scanned_pages": result.scanned_pages,
+            "chunks":        chunk_count,
+        })
+    except ValueError as e:
+        fail_job(job_id, str(e))
+    except Exception as e:
+        fail_job(job_id, f"Processing failed: {e}")
+
+
 # ── Upload ────────────────────────────────────────────────
 @app.post("/api/upload")
 @limiter.limit("3/10minute")
 async def upload_pdf(request: Request, file: UploadFile = File(...)):
-
+    """
+    Accepts the file, validates it quickly, then kicks off async processing.
+    Returns a job_id immediately — client polls /api/upload/status/{job_id}.
+    """
     from pathlib import Path
     ext = Path(file.filename or "").suffix.lower()
     if ext not in ALLOWED_EXTENSIONS:
@@ -119,33 +163,25 @@ async def upload_pdf(request: Request, file: UploadFile = File(...)):
             detail=f"Maximum of {MAX_DOCS} documents reached. Delete one to upload a new file."
         )
 
-    try:
-        import gc
-        result = process_document(raw, file.filename)
+    job_id = create_job(file.filename)
+    asyncio.create_task(_process_upload(job_id, raw, file.filename))
 
-        if result.scanned_pages > 0:
-            result.pages         = ocr_scanned_pages(raw, result.pages)
-            result.text_pages    = sum(1 for p in result.pages if not p.is_scanned)
-            result.scanned_pages = sum(1 for p in result.pages if p.is_scanned)
+    return {"job_id": job_id, "filename": file.filename, "status": "processing"}
 
-        del raw   # free pdf bytes before embedding — reduces peak memory
-        gc.collect()
-        chunk_count = ingest_document(result)
 
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=422, detail=f"PDF processing failed: {e}")
-
-    DOC_REGISTRY[result.doc_id] = result
-
+# ── Upload status ─────────────────────────────────────────
+@app.get("/api/upload/status/{job_id}")
+async def upload_status(job_id: str):
+    """Poll this endpoint to check async upload progress."""
+    job = get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found.")
     return {
-        "doc_id":        result.doc_id,
-        "filename":      result.filename,
-        "total_pages":   result.total_pages,
-        "text_pages":    result.text_pages,
-        "scanned_pages": result.scanned_pages,
-        "chunks":        chunk_count,
+        "job_id":   job.job_id,
+        "filename": job.filename,
+        "status":   job.status,   # processing | done | failed
+        "result":   job.result,
+        "error":    job.error,
     }
 
 
@@ -154,14 +190,22 @@ async def upload_pdf(request: Request, file: UploadFile = File(...)):
 @limiter.limit("15/10minute")
 async def chat(request: Request, req: ChatRequest):
 
+    # Load conversation history for this session
+    history   = get_history(req.session_id)
+
+    # Build a richer retrieval query for short follow-up questions
+    # (e.g. "what about the total?" needs prior context to retrieve well)
+    retrieval_query = req.message
+    if history and len(req.message.split()) < 12:
+        recent_user_msgs = [m["content"] for m in history[-4:] if m["role"] == "user"]
+        if recent_user_msgs:
+            retrieval_query = " ".join(recent_user_msgs[-2:]) + " " + req.message
+
     # Retrieve chunks + build context
-    chunks    = retrieve(req.message, req.doc_ids)
+    chunks    = retrieve(retrieval_query, req.doc_ids)
     ret_meta  = format_retrieval_meta(chunks)
     context   = build_context(chunks)
     intent    = classify_intent(req.message)
-
-    # Load conversation history for this session
-    history   = get_history(req.session_id)
 
     # Route directly to the right agent — avoids fragile LLM tool-call routing
     if intent == "summary":
@@ -176,35 +220,61 @@ async def chat(request: Request, req: ChatRequest):
         stats = session_stats(req.session_id)
         yield f"data: {json.dumps({'type': 'retrieval_meta', 'chunks': ret_meta, 'routed_to': AGENT_LABELS[intent], 'intent': intent, 'session': stats})}\n\n"
 
-        full_response = []
+        final_response = []
 
         try:
             loop = asyncio.get_event_loop()
 
-            def run_agent():
+            # ── Step 1: run specialist agent silently, collect draft ──
+            def run_specialist():
                 return list(agent.run(
                     req.message,
                     messages=history,
                     stream=True,
                 ))
 
-            response_chunks = await loop.run_in_executor(None, run_agent)
+            specialist_chunks = await loop.run_in_executor(None, run_specialist)
+            draft = "".join(
+                getattr(c, "content", None) or "" for c in specialist_chunks
+            ).strip()
 
-            for chunk in response_chunks:
+            if not draft:
+                yield f"data: {json.dumps({'type': 'error', 'message': 'No response from specialist agent.'})}\n\n"
+                return
+
+            # ── Step 2: signal consolidation starting ─────────────────
+            yield f"data: {json.dumps({'type': 'consolidating'})}\n\n"
+
+            # ── Step 3: run consolidator and stream its output ────────
+            consolidator = create_consolidator_agent(req.message, draft)
+
+            def run_consolidator():
+                return list(consolidator.run(
+                    "Produce the final answer now.",
+                    stream=True,
+                ))
+
+            consolidated_chunks = await loop.run_in_executor(None, run_consolidator)
+
+            for chunk in consolidated_chunks:
                 content = getattr(chunk, "content", None) or ""
                 if content:
-                    full_response.append(content)
+                    final_response.append(content)
                     yield f"data: {json.dumps({'type': 'content', 'content': content})}\n\n"
+
+            # Fall back to draft if consolidator returned nothing
+            if not final_response:
+                final_response.append(draft)
+                yield f"data: {json.dumps({'type': 'content', 'content': draft})}\n\n"
 
         except Exception as e:
             yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
         finally:
-            # Persist this turn to session memory
-            if full_response:
+            if final_response:
                 append_turn(
                     req.session_id,
                     req.message,
-                    "".join(full_response),
+                    "".join(final_response),
                 )
 
         yield "data: [DONE]\n\n"

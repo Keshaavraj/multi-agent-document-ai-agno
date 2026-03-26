@@ -582,6 +582,14 @@
   40%           { transform: translateY(-6px); opacity: 1; }
 }
 
+.consolidating-indicator {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  font-style: italic;
+  margin-bottom: 0.4rem;
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
 @keyframes pulse {
   0%, 100% { opacity: 1; }
   50%       { opacity: 0.3; }

@@ -45,32 +45,37 @@ export default function PDFUploader({ onUploaded, onStatusChange }) {
     form.append('file', entry.file)
 
     try {
+      // ── Step 1: transfer the file ──────────────────────
       const res = await axios.post(`${BACKEND}/api/upload`, form, {
         headers: { 'Content-Type': 'multipart/form-data' },
         onUploadProgress: evt => {
           const pct = Math.round((evt.loaded / evt.total) * 100)
-          const nextStatus = pct >= 100 ? 'processing' : 'uploading'
           setQueue(prev => prev.map(e =>
-            e.id === entry.id ? { ...e, status: nextStatus, progress: pct } : e
+            e.id === entry.id ? { ...e, progress: pct } : e
           ))
-          if (pct >= 100) {
-            onStatusChange?.({ filename: entry.name, status: 'processing' })
-          }
         },
       })
 
-      const r = res.data
+      const { job_id } = res.data
+
+      // ── Step 2: poll until done or failed ─────────────
       setQueue(prev => prev.map(e =>
-        e.id === entry.id
-          ? { ...e, status: 'done', progress: 100, result: r }
-          : e
+        e.id === entry.id ? { ...e, status: 'processing', progress: 100 } : e
+      ))
+      onStatusChange?.({ filename: entry.name, status: 'processing' })
+
+      const r = await pollJobStatus(job_id)
+
+      setQueue(prev => prev.map(e =>
+        e.id === entry.id ? { ...e, status: 'done', result: r } : e
       ))
       onStatusChange?.({
         filename: entry.name,
-        status: 'done',
-        info: `${r.total_pages} pages · ${r.chunks} chunks indexed.`,
+        status:   'done',
+        info:     `${r.total_pages} pages · ${r.chunks} chunks indexed.`,
       })
       onUploaded?.(r)
+
     } catch (err) {
       const status = err.response?.status
       const raw    = err.response?.data?.detail || err.message || 'Upload failed'
@@ -85,6 +90,26 @@ export default function PDFUploader({ onUploaded, onStatusChange }) {
       onStatusChange?.({ filename: entry.name, status: 'error', info: msg })
     }
   }
+
+  // Poll /api/upload/status/{job_id} every 2s until done or failed
+  const pollJobStatus = (job_id) => new Promise((resolve, reject) => {
+    const interval = setInterval(async () => {
+      try {
+        const { data } = await axios.get(`${BACKEND}/api/upload/status/${job_id}`)
+        if (data.status === 'done') {
+          clearInterval(interval)
+          resolve(data.result)
+        } else if (data.status === 'failed') {
+          clearInterval(interval)
+          reject(new Error(data.error || 'Processing failed.'))
+        }
+        // still 'processing' → keep polling
+      } catch {
+        clearInterval(interval)
+        reject(new Error('Lost connection while processing.'))
+      }
+    }, 2000)
+  })
 
   const remove = id => setQueue(prev => prev.filter(e => e.id !== id))
 
@@ -121,11 +146,11 @@ export default function PDFUploader({ onUploaded, onStatusChange }) {
         </p>
       </div>
 
-      {/* OCR banner */}
+      {/* Processing banner */}
       {isOcring && (
         <div className="uploader__ocr-banner">
           <span className="uploader__ocr-banner-spinner">⟳</span>
-          <span>Running OCR on scanned pages — please wait, this can take up to 30 seconds…</span>
+          <span>Document Intelligence is at work — reading, understanding, and indexing your content…</span>
         </div>
       )}
 
@@ -138,7 +163,7 @@ export default function PDFUploader({ onUploaded, onStatusChange }) {
                 <span className="upload-item__icon">
                   {e.status === 'done' && '✅'}
                   {e.status === 'error' && '❌'}
-                  {e.status === 'processing' && '🔍'}
+                  {e.status === 'processing' && '⚙️'}
                   {(e.status === 'uploading' || e.status === 'pending') && '⏳'}
                 </span>
                 <span className="upload-item__name">{e.name}</span>
@@ -151,7 +176,7 @@ export default function PDFUploader({ onUploaded, onStatusChange }) {
                 </div>
               )}
               {e.status === 'processing' && (
-                <p className="upload-item__ocr">Running OCR on scanned pages…</p>
+                <p className="upload-item__ocr">Intelligence pipeline running — parsing structure, extracting insights, building knowledge index…</p>
               )}
 
               {e.status === 'done' && e.result && (

@@ -14,6 +14,7 @@ EMBED_MODEL   = "BAAI/bge-small-en-v1.5"   # ~25 MB, fast, no API key
 CHUNK_SIZE    = 512    # characters per chunk
 CHUNK_OVERLAP = 80     # overlap between chunks
 TOP_K         = 6      # chunks returned per query
+EMBED_BATCH   = 32     # embed this many chunks at a time — limits peak memory
 
 _embedder: TextEmbedding | None = None
 _db: lancedb.DBConnection | None = None
@@ -85,19 +86,21 @@ def ingest_document(doc_result) -> int:
     if not raw_chunks:
         return 0
 
-    texts = [c["text"] for c in raw_chunks]
-    embeddings = list(embedder.embed(texts))   # returns generator → list
-
+    # Embed in batches to avoid memory spikes on large documents
     records = []
-    for chunk, vec in zip(raw_chunks, embeddings):
-        records.append(Chunk(
-            doc_id=chunk["doc_id"],
-            filename=chunk["filename"],
-            page_num=chunk["page_num"],
-            chunk_id=chunk["chunk_id"],
-            text=chunk["text"],
-            vector=vec.tolist(),
-        ))
+    for batch_start in range(0, len(raw_chunks), EMBED_BATCH):
+        batch = raw_chunks[batch_start : batch_start + EMBED_BATCH]
+        texts = [c["text"] for c in batch]
+        embeddings = list(embedder.embed(texts))
+        for chunk, vec in zip(batch, embeddings):
+            records.append(Chunk(
+                doc_id=chunk["doc_id"],
+                filename=chunk["filename"],
+                page_num=chunk["page_num"],
+                chunk_id=chunk["chunk_id"],
+                text=chunk["text"],
+                vector=vec.tolist(),
+            ))
 
     table = db.create_table(table_name, data=records, mode="overwrite")
     return len(records)

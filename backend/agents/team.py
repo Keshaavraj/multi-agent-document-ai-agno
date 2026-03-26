@@ -39,7 +39,9 @@ SUMMARY_KEYWORDS = {
 ANALYST_KEYWORDS = {
     "table", "extract", "statistics", "statistic", "data", "numbers",
     "list all", "compare", "percentage", "figures", "how many", "chart",
-    "breakdown", "metrics",
+    "breakdown", "metrics", "calculate", "calculation", "total", "subtotal",
+    "sum", "add up", "invoice", "bill", "amount", "price", "cost", "tax",
+    "discount", "balance", "due", "payment", "charges", "fees", "grand total",
 }
 
 
