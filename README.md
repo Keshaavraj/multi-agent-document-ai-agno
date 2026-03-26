@@ -12,7 +12,7 @@
 
 ### Desktop
 
-**Product Overview — entry point with hero section, three-step workflow, and eight capability cards powered by Agno · Groq · LanceDB**
+**Product Overview — Landing Page, three-step workflow, and eight capability cards powered by Agno · Groq · LanceDB**
 
 <img src="assets/Web_Landing_page.png" alt="Product Overview" width="100%"/>
 
