@@ -170,6 +170,11 @@ export default function ChatPage() {
     }
   }
 
+  const clearAllDocs = async () => {
+    if (!window.confirm('Remove all documents? This cannot be undone.')) return
+    await Promise.all(docs.map(d => deleteDoc(d.doc_id)))
+  }
+
   const onUploaded = (result) => {
     setDocs(prev => {
       if (prev.find(d => d.doc_id === result.doc_id)) return prev
@@ -471,7 +476,7 @@ export default function ChatPage() {
                 <button
                   className="doc-action-btn doc-action-btn--danger"
                   title="Remove all documents"
-                  onClick={() => { if (window.confirm('Remove all documents?')) docs.forEach(d => deleteDoc(d.doc_id)) }}
+                  onClick={clearAllDocs}
                 >Clear all</button>
               )}
             </div>

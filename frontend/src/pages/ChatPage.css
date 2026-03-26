@@ -283,9 +283,13 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 0.4rem;
+  margin-bottom: 0.6rem;
 }
-.doc-list-header .sidebar-section-title { margin-bottom: 0; }
+.doc-list-header .sidebar-section-title {
+  margin-bottom: 0;
+  display: block;
+  flex-shrink: 0;
+}
 
 .doc-list-actions {
   display: flex;
