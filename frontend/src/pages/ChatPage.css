@@ -651,7 +651,65 @@
 }
 .send-btn:hover:not(:disabled) { background: #388bf5; transform: scale(1.05); }
 .send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-.send-btn--loading { background: var(--bg-card); }
+
+.stop-btn {
+  background: #e53e3e;
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  width: 42px;
+  height: 42px;
+  font-size: 0.9rem;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.2s, transform 0.1s;
+}
+.stop-btn:hover { background: #c53030; transform: scale(1.05); }
+
+/* Edit button on user messages */
+.message-bubble--user {
+  position: relative;
+}
+.edit-msg-btn {
+  position: absolute;
+  top: 6px;
+  right: -28px;
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s;
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+.message-bubble--user:hover .edit-msg-btn { opacity: 1; }
+.edit-msg-btn:hover { color: var(--accent-blue); }
+
+/* Suggestion buttons after ready message */
+.suggestion-btns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+.suggestion-btn {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 0.4rem 0.9rem;
+  font-size: 0.82rem;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+  text-align: left;
+}
+.suggestion-btn:hover {
+  background: var(--accent-blue);
+  border-color: var(--accent-blue);
+  color: #fff;
+}
 
 /* ── Document processing status banner ── */
 .doc-status-banner {

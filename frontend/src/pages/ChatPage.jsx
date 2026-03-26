@@ -193,12 +193,11 @@ export default function ChatPage() {
       ? ['Summarise the data', 'What are the key figures?', 'Calculate the totals']
       : ['Summarise this document', 'What are the key points?', 'Extract all figures and numbers']
 
-    const promptList = prompts.map(p => `• *${p}*`).join('\n')
-
     setMessages(prev => [...prev, {
       id:           crypto.randomUUID(),
       role:         'assistant',
-      content:      `**${result.filename}** is ready — I've fully understood its content and built a knowledge index across ${result.total_pages} page${result.total_pages !== 1 ? 's' : ''} (${result.chunks} knowledge chunks).\n\nYou can ask me anything about it. Here are a few ideas to get started:\n\n${promptList}\n\nOr type your own question below.`,
+      content:      `**${result.filename}** is ready — I've fully understood its content and built a knowledge index across ${result.total_pages} page${result.total_pages !== 1 ? 's' : ''} (${result.chunks} knowledge chunks).\n\nYou can ask me anything about it. Try one of these or type your own question below:`,
+      prompts,
       retrieval:    null,
       agent:        null,
       responseTime: null,
@@ -382,6 +381,24 @@ export default function ChatPage() {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() }
   }
 
+  const stopGeneration = () => {
+    if (abortRef.current) abortRef.current.abort()
+    setLoading(false)
+    setMessages(prev => prev.map(m =>
+      m.loading ? { ...m, loading: false, consolidating: false } : m
+    ))
+  }
+
+  const editMessage = (msgIndex) => {
+    const msg = messages[msgIndex]
+    if (!msg || msg.role !== 'user') return
+    if (loading) stopGeneration()
+    setInput(msg.content)
+    // Remove this user message and everything after it
+    setMessages(prev => prev.slice(0, msgIndex))
+    setTimeout(() => inputRef.current?.focus(), 50)
+  }
+
   // ── Render ────────────────────────────────────────────
   return (
     <div className="chat-layout">
@@ -560,6 +577,11 @@ export default function ChatPage() {
               {msg.role === 'user' && (
                 <div className="message-bubble message-bubble--user">
                   {msg.content}
+                  <button
+                    className="edit-msg-btn"
+                    title="Edit message"
+                    onClick={() => editMessage(i)}
+                  >✎</button>
                 </div>
               )}
 
@@ -624,6 +646,15 @@ export default function ChatPage() {
                       </ReactMarkdown>
                     </div>
                   )}
+                  {msg.prompts && msg.prompts.length > 0 && (
+                    <div className="suggestion-btns">
+                      {msg.prompts.map((p, pi) => (
+                        <button key={pi} className="suggestion-btn" onClick={() => send(p)}>
+                          {p}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -671,13 +702,19 @@ export default function ChatPage() {
             maxLength={600}
             disabled={loading || isProcessing}
           />
-          <button
-            className={`send-btn ${loading ? 'send-btn--loading' : ''}`}
-            onClick={() => send()}
-            disabled={loading || !input.trim() || isProcessing}
-          >
-            {loading ? '⏳' : '➤'}
-          </button>
+          {loading ? (
+            <button className="stop-btn" onClick={stopGeneration} title="Stop generating">
+              ■
+            </button>
+          ) : (
+            <button
+              className="send-btn"
+              onClick={() => send()}
+              disabled={!input.trim() || isProcessing}
+            >
+              ➤
+            </button>
+          )}
         </div>
 
       </main>
