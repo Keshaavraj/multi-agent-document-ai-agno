@@ -109,6 +109,13 @@ export default function ChatPage() {
       const res = await axios.get(`${BACKEND}/api/documents`)
       setDocs(res.data)
       setBackendStatus('ready')
+      // Clear any stale selected IDs that no longer exist on the backend
+      const validIds = new Set(res.data.map(d => d.doc_id))
+      setSelectedDocs(prev => {
+        const next = prev.filter(id => validIds.has(id))
+        if (next.length !== prev.length) saveSelectedDocs(next)
+        return next
+      })
     } catch { /* backend not yet connected */ }
   }
 
