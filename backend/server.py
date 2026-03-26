@@ -2,6 +2,7 @@ import io
 import json
 import asyncio
 import os
+import time
 from fastapi import FastAPI, UploadFile, File, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
@@ -48,7 +49,30 @@ MAX_FILE_MB   = 20
 MAX_DOCS      = 10
 MAX_MSG_CHARS = 600
 
-DOC_REGISTRY: dict = {}
+# Per-session document registry — isolates each user's docs
+SESSION_DOCS: dict[str, dict]          = {}   # session_id → {doc_id: DocumentResult}
+SESSION_LAST_ACTIVE: dict[str, float]  = {}   # session_id → last activity timestamp
+SESSION_DOC_TTL = 3600                         # 1 hour
+
+
+def _session_registry(session_id: str) -> dict:
+    """Get (or create) the doc registry for a session and refresh its TTL."""
+    SESSION_LAST_ACTIVE[session_id] = time.time()
+    return SESSION_DOCS.setdefault(session_id, {})
+
+
+def _evict_expired_sessions():
+    """Remove sessions inactive for more than SESSION_DOC_TTL and free their vectors."""
+    cutoff  = time.time() - SESSION_DOC_TTL
+    expired = [sid for sid, t in SESSION_LAST_ACTIVE.items() if t < cutoff]
+    for sid in expired:
+        registry = SESSION_DOCS.pop(sid, {})
+        for doc_id in registry:
+            try:
+                delete_document_vectors(doc_id)
+            except Exception:
+                pass
+        SESSION_LAST_ACTIVE.pop(sid, None)
 
 AGENT_LABELS = {
     "rag":     "RAG Agent",
@@ -87,15 +111,14 @@ class ChatRequest(BaseModel):
 @app.get("/api/health")
 async def health():
     return {
-        "status":      "ok",
-        "service":     "doc-intelligence-ai",
-        "docs_loaded": len(DOC_REGISTRY),
-        "docs_limit":  MAX_DOCS,
+        "status":    "ok",
+        "service":   "doc-intelligence-ai",
+        "docs_limit": MAX_DOCS,
     }
 
 
 # ── Background processor ──────────────────────────────────
-async def _process_upload(job_id: str, raw: bytes, filename: str):
+async def _process_upload(job_id: str, raw: bytes, filename: str, session_id: str):
     """
     Runs entirely in a thread-pool executor so heavy work (pdfplumber,
     OCR, fastembed) never blocks the event loop or hits Render's HTTP timeout.
@@ -118,7 +141,7 @@ async def _process_upload(job_id: str, raw: bytes, filename: str):
 
     try:
         result, chunk_count = await loop.run_in_executor(None, _run)
-        DOC_REGISTRY[result.doc_id] = result
+        _session_registry(session_id)[result.doc_id] = result
         complete_job(job_id, {
             "doc_id":        result.doc_id,
             "filename":      result.filename,
@@ -136,12 +159,13 @@ async def _process_upload(job_id: str, raw: bytes, filename: str):
 # ── Upload ────────────────────────────────────────────────
 @app.post("/api/upload")
 @limiter.limit("3/10minute")
-async def upload_pdf(request: Request, file: UploadFile = File(...)):
+async def upload_pdf(request: Request, file: UploadFile = File(...), session_id: str = "default"):
     """
     Accepts the file, validates it quickly, then kicks off async processing.
     Returns a job_id immediately — client polls /api/upload/status/{job_id}.
     """
     from pathlib import Path
+    _evict_expired_sessions()
     ext = Path(file.filename or "").suffix.lower()
     if ext not in ALLOWED_EXTENSIONS:
         raise HTTPException(
@@ -157,14 +181,15 @@ async def upload_pdf(request: Request, file: UploadFile = File(...)):
             detail=f"File exceeds {MAX_FILE_MB} MB. Please compress or split the document."
         )
 
-    if len(DOC_REGISTRY) >= MAX_DOCS:
+    registry = _session_registry(session_id)
+    if len(registry) >= MAX_DOCS:
         raise HTTPException(
             status_code=429,
             detail=f"Maximum of {MAX_DOCS} documents reached. Delete one to upload a new file."
         )
 
     job_id = create_job(file.filename)
-    asyncio.create_task(_process_upload(job_id, raw, file.filename))
+    asyncio.create_task(_process_upload(job_id, raw, file.filename, session_id))
 
     return {"job_id": job_id, "filename": file.filename, "status": "processing"}
 
@@ -202,20 +227,24 @@ async def chat(request: Request, req: ChatRequest):
 
     # If user references a specific doc by name, search only that doc first
     # then fall back to all selected docs if nothing found
+    _evict_expired_sessions()
+    session_registry = _session_registry(req.session_id)
+    # Filter doc_ids to only those belonging to this session
+    valid_doc_ids  = [did for did in req.doc_ids if did in session_registry]
     msg_lower      = req.message.lower()
-    doc_names      = {d.doc_id: d.filename for d in DOC_REGISTRY.values() if d.doc_id in req.doc_ids}
+    doc_names      = {d.doc_id: d.filename for d in session_registry.values() if d.doc_id in valid_doc_ids}
     focused_doc_id = next(
         (did for did, fname in doc_names.items() if fname.lower().split('.')[0] in msg_lower),
         None,
     )
 
-    # Retrieve chunks + build context
+    # Retrieve chunks + build context (only from this session's docs)
     if focused_doc_id:
         chunks = retrieve(retrieval_query, [focused_doc_id])
-        if not chunks:                         # nothing in focused doc — widen search
-            chunks = retrieve(retrieval_query, req.doc_ids)
+        if not chunks:
+            chunks = retrieve(retrieval_query, valid_doc_ids)
     else:
-        chunks = retrieve(retrieval_query, req.doc_ids)
+        chunks = retrieve(retrieval_query, valid_doc_ids)
     ret_meta  = format_retrieval_meta(chunks)
     context   = build_context(chunks)
     intent    = classify_intent(req.message)
@@ -326,8 +355,16 @@ async def chat(request: Request, req: ChatRequest):
 # ── Session ───────────────────────────────────────────────
 @app.delete("/api/session/{session_id}")
 async def reset_session(session_id: str):
-    """Clear conversation history for a session (New Chat button)."""
+    """Clear conversation history and docs for a session."""
     clear_session(session_id)
+    # Also clean up this session's docs
+    registry = SESSION_DOCS.pop(session_id, {})
+    for doc_id in registry:
+        try:
+            delete_document_vectors(doc_id)
+        except Exception:
+            pass
+    SESSION_LAST_ACTIVE.pop(session_id, None)
     return {"cleared": session_id}
 
 
@@ -338,7 +375,9 @@ async def get_session_info(session_id: str):
 
 # ── Documents ─────────────────────────────────────────────
 @app.get("/api/documents")
-async def list_documents():
+async def list_documents(session_id: str = "default"):
+    _evict_expired_sessions()
+    registry = _session_registry(session_id)
     return [
         {
             "doc_id":        d.doc_id,
@@ -347,14 +386,15 @@ async def list_documents():
             "text_pages":    d.text_pages,
             "scanned_pages": d.scanned_pages,
         }
-        for d in DOC_REGISTRY.values()
+        for d in registry.values()
     ]
 
 
 @app.delete("/api/document/{doc_id}")
-async def delete_document(doc_id: str):
-    if doc_id not in DOC_REGISTRY:
+async def delete_document(doc_id: str, session_id: str = "default"):
+    registry = _session_registry(session_id)
+    if doc_id not in registry:
         raise HTTPException(status_code=404, detail="Document not found.")
     delete_document_vectors(doc_id)
-    del DOC_REGISTRY[doc_id]
+    del registry[doc_id]
     return {"deleted": doc_id}

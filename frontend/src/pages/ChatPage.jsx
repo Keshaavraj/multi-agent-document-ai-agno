@@ -6,6 +6,13 @@ import axios from 'axios'
 import PDFUploader from '../components/PDFUploader'
 import { getSession, saveSelectedDocs, saveSidebarState, clearSessionMemory } from '../utils/session'
 import './ChatPage.css'
+import {
+  FiMenu, FiX, FiCpu, FiDatabase, FiFile, FiTrash2,
+  FiPaperclip, FiSend, FiSquare, FiEdit2, FiUpload,
+  FiZap, FiSearch, FiCheckCircle, FiXCircle, FiLoader,
+  FiClock, FiCheckSquare, FiSettings, FiRefreshCw,
+  FiClipboard, FiImage, FiType, FiBarChart2, FiHash, FiKey,
+} from 'react-icons/fi'
 
 const BACKEND = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000'
 
@@ -16,11 +23,11 @@ const AGENT_COLORS = {
 }
 
 const QUICK_PROMPTS = [
-  '📄 Summarise this document',
-  '🔍 What are the key findings?',
-  '📊 Extract all tables and statistics',
-  '📌 List the main conclusions',
-  '❓ What problem does this document address?',
+  'Summarise this document',
+  'What are the key findings?',
+  'Extract all tables and statistics',
+  'List the main conclusions',
+  'What problem does this document address?',
 ]
 
 export default function ChatPage() {
@@ -133,7 +140,7 @@ export default function ChatPage() {
   // ── Document management ───────────────────────────────
   const fetchDocs = async () => {
     try {
-      const res = await axios.get(`${BACKEND}/api/documents`)
+      const res = await axios.get(`${BACKEND}/api/documents?session_id=${sessionId}`)
       setDocs(res.data)
       setBackendStatus('ready')
       // Clear any stale selected IDs that no longer exist on the backend
@@ -158,7 +165,7 @@ export default function ChatPage() {
 
   const deleteDoc = async (doc_id) => {
     try {
-      await axios.delete(`${BACKEND}/api/document/${doc_id}`)
+      await axios.delete(`${BACKEND}/api/document/${doc_id}?session_id=${sessionId}`)
       setDocs(prev => prev.filter(d => d.doc_id !== doc_id))
       setSelectedDocs(prev => {
         const next = prev.filter(id => id !== doc_id)
@@ -194,20 +201,20 @@ export default function ChatPage() {
     const isSheet = ['csv', 'xlsx'].includes(ext)
     const prompts = isImage
       ? [
-          { icon: '🖼️', label: 'Describe what you see in this image' },
-          { icon: '🔢', label: 'Are there any numbers or data in this image?' },
-          { icon: '🔤', label: 'What text is visible?' },
+          { Icon: FiImage,      label: 'Describe what you see in this image' },
+          { Icon: FiHash,       label: 'Are there any numbers or data in this image?' },
+          { Icon: FiType,       label: 'What text is visible?' },
         ]
       : isSheet
       ? [
-          { icon: '📊', label: 'Summarise the data' },
-          { icon: '🔑', label: 'What are the key figures?' },
-          { icon: '🧮', label: 'Calculate the totals' },
+          { Icon: FiBarChart2,  label: 'Summarise the data' },
+          { Icon: FiKey,        label: 'What are the key figures?' },
+          { Icon: FiHash,       label: 'Calculate the totals' },
         ]
       : [
-          { icon: '📋', label: 'Summarise this document' },
-          { icon: '💡', label: 'What are the key points?' },
-          { icon: '🔢', label: 'Extract all figures and numbers' },
+          { Icon: FiClipboard,  label: 'Summarise this document' },
+          { Icon: FiZap,        label: 'What are the key points?' },
+          { Icon: FiHash,       label: 'Extract all figures and numbers' },
         ]
 
     setMessages(prev => [...prev, {
@@ -424,16 +431,16 @@ export default function ChatPage() {
       <aside className={`chat-sidebar ${sidebarOpen ? 'chat-sidebar--open' : 'chat-sidebar--closed'}`}>
 
         <div className="sidebar-header">
-          <button className="sidebar-brand" onClick={() => navigate('/')}>⚙️ Doc AI</button>
+          <button className="sidebar-brand" onClick={() => navigate('/')}><FiSettings size={14} /> Doc AI</button>
           <div className="sidebar-header-actions">
-            <button className="icon-btn" title="New Chat" onClick={newChat}>🔄</button>
-            <button className="icon-btn" title="Close sidebar" onClick={toggleSidebar}>✕</button>
+            <button className="icon-btn" title="New Chat" onClick={newChat}><FiRefreshCw size={16} /></button>
+            <button className="icon-btn" title="Close sidebar" onClick={toggleSidebar}><FiX size={16} /></button>
           </div>
         </div>
 
         {/* Performance metrics */}
         <div className="sidebar-section">
-          <h3 className="sidebar-section-title">📊 Performance</h3>
+          <h3 className="sidebar-section-title"><FiBarChart2 size={12} /> Performance</h3>
           <div className="metrics-grid">
             <div className="metric"><span className="metric-label">Last Response</span><span className="metric-value">{metrics.lastResponse}s</span></div>
             <div className="metric"><span className="metric-label">Avg Response</span><span className="metric-value">{metrics.avgResponse}s</span></div>
@@ -444,7 +451,7 @@ export default function ChatPage() {
 
         {/* Active agents */}
         <div className="sidebar-section">
-          <h3 className="sidebar-section-title">🤖 Active Agents</h3>
+          <h3 className="sidebar-section-title"><FiCpu size={12} /> Active Agents</h3>
           <div className="agents-list">
             {Object.entries(AGENT_COLORS).map(([name, color]) => (
               <div key={name} className="agent-item">
@@ -464,7 +471,7 @@ export default function ChatPage() {
 
         {/* Session memory */}
         <div className="sidebar-section">
-          <h3 className="sidebar-section-title">🧠 Session Memory</h3>
+          <h3 className="sidebar-section-title"><FiDatabase size={12} /> Session Memory</h3>
           <div className="session-bar-wrap">
             <div className="session-bar">
               <div className="session-bar-fill" style={{ width: `${(sessionTurns / 8) * 100}%` }} />
@@ -477,7 +484,7 @@ export default function ChatPage() {
         {/* Document list — select which docs to query */}
         <div className="sidebar-section sidebar-section--docs">
           <div className="doc-list-header">
-            <h3 className="sidebar-section-title">📄 My Documents</h3>
+            <h3 className="sidebar-section-title"><FiFile size={12} /> My Documents</h3>
             <div className="doc-list-actions">
               <button
                 className="doc-action-btn"
@@ -510,7 +517,7 @@ export default function ChatPage() {
                       <span className="doc-item-meta">{d.total_pages}p · {d.text_pages} text · {d.scanned_pages} OCR</span>
                     </div>
                   </label>
-                  <button className="doc-item-delete" onClick={() => deleteDoc(d.doc_id)} title="Remove document">🗑</button>
+                  <button className="doc-item-delete" onClick={() => deleteDoc(d.doc_id)} title="Remove document"><FiTrash2 size={13} /></button>
                 </li>
               ))}
             </ul>
@@ -524,7 +531,7 @@ export default function ChatPage() {
 
       {/* Sidebar open button (when closed) */}
       {!sidebarOpen && (
-        <button className="sidebar-open-btn" onClick={toggleSidebar}>☰</button>
+        <button className="sidebar-open-btn" onClick={toggleSidebar}><FiMenu size={20} /></button>
       )}
 
       {/* ── Main chat area ── */}
@@ -533,7 +540,7 @@ export default function ChatPage() {
         {/* Top bar */}
         <div className="chat-topbar">
           {!sidebarOpen && (
-            <button className="icon-btn" onClick={toggleSidebar}>☰</button>
+            <button className="icon-btn" onClick={toggleSidebar}><FiMenu size={18} /></button>
           )}
           <div className="chat-topbar-title">
             <span className="chat-topbar-name">Doc Intelligence AI</span>
@@ -548,8 +555,8 @@ export default function ChatPage() {
         {/* Backend warm-up banner */}
         {backendStatus !== 'ready' && (
           <div className={`warmup-banner warmup-banner--${backendStatus}`}>
-            {backendStatus === 'checking' && '⏳ Connecting to backend…'}
-            {backendStatus === 'cold'     && '🔄 Backend is warming up (Render free tier — usually takes 20–40s)…'}
+            {backendStatus === 'checking' && <><FiLoader size={13} /> Connecting to backend…</>}
+            {backendStatus === 'cold'     && <><FiRefreshCw size={13} /> Backend is warming up (Render free tier — usually takes 20–40s)…</>}
           </div>
         )}
 
@@ -560,13 +567,13 @@ export default function ChatPage() {
               <>⬆️ Uploading <strong>{docStatus.filename}</strong>… please wait.</>
             )}
             {docStatus.status === 'processing' && (
-              <>🔍 Processing <strong>{docStatus.filename}</strong> — OCR running on scanned pages. This can take up to 30 seconds. <strong>Please wait before asking questions.</strong></>
+              <><FiRefreshCw size={13} /> Processing <strong>{docStatus.filename}</strong> — Intelligence pipeline running. <strong>Please wait before asking questions.</strong></>
             )}
             {docStatus.status === 'done' && (
-              <>✅ <strong>{docStatus.filename}</strong> is ready! {docStatus.info} You can now ask questions.</>
+              <><FiCheckCircle size={13} /> <strong>{docStatus.filename}</strong> is ready! {docStatus.info} You can now ask questions.</>
             )}
             {docStatus.status === 'error' && (
-              <>❌ Failed to process <strong>{docStatus.filename}</strong>: {docStatus.info}</>
+              <><FiXCircle size={13} /> Failed to process <strong>{docStatus.filename}</strong>: {docStatus.info}</>
             )}
           </div>
         )}
@@ -576,14 +583,14 @@ export default function ChatPage() {
 
           {messages.length === 0 && (
             <div className="chat-welcome">
-              <div className="chat-welcome-icon">⚙️</div>
+              <div className="chat-welcome-icon"><FiSettings size={32} /></div>
               <h2>Doc Intelligence AI</h2>
               <p>Upload a document and ask anything — precise answers, summaries, and data extraction via multi-agent AI.</p>
 
               {/* Inline uploader — shown in welcome when no docs yet OR when triggered */}
               {(docs.length === 0 || showUploader) && (
                 <div className="chat-upload-zone">
-                  <PDFUploader onUploaded={onUploaded} onStatusChange={onDocStatusChange} />
+                  <PDFUploader onUploaded={onUploaded} onStatusChange={onDocStatusChange} sessionId={sessionId} />
                   <p className="chat-upload-limits">
                     PDF · DOCX · TXT · PNG · JPG &nbsp;·&nbsp; Max 20 MB · 40 pages · 10 docs · 3 uploads / 10 min
                   </p>
@@ -591,7 +598,7 @@ export default function ChatPage() {
               )}
 
               {docs.length > 0 && selectedDocs.length === 0 && !showUploader && (
-                <p className="chat-hint">☑️ Select a document from the sidebar to start chatting.</p>
+                <p className="chat-hint"><FiCheckSquare size={14} /> Select a document from the sidebar to start chatting.</p>
               )}
               {selectedDocs.length > 0 && !showUploader && (
                 <div className="quick-prompts">
@@ -614,7 +621,7 @@ export default function ChatPage() {
                     className="edit-msg-btn"
                     title="Edit message"
                     onClick={() => editMessage(i)}
-                  >✎</button>
+                  ><FiEdit2 size={13} /></button>
                 </div>
               )}
 
@@ -630,7 +637,7 @@ export default function ChatPage() {
                         {msg.agent}
                       </span>
                       {msg.responseTime && (
-                        <span className="response-time">⚡ {msg.responseTime}s</span>
+                        <span className="response-time"><FiZap size={11} /> {msg.responseTime}s</span>
                       )}
                     </div>
                   )}
@@ -638,7 +645,7 @@ export default function ChatPage() {
                   {msg.retrieval && msg.retrieval.length > 0 && (
                     <details className="retrieval-panel">
                       <summary className="retrieval-panel-summary">
-                        🔍 {msg.retrieval.length} chunks retrieved — click to inspect
+                        <FiSearch size={12} /> {msg.retrieval.length} chunks retrieved — click to inspect
                       </summary>
                       <div className="retrieval-chunks">
                         {msg.retrieval.map((c, j) => (
@@ -669,7 +676,7 @@ export default function ChatPage() {
                   )}
                   {msg.consolidating && msg.content && (
                     <div className="consolidating-indicator">
-                      ✦ Consolidating findings…
+                      <FiRefreshCw size={12} /> Consolidating findings…
                     </div>
                   )}
                   {msg.content && (
@@ -683,7 +690,7 @@ export default function ChatPage() {
                     <div className="suggestion-btns">
                       {msg.prompts.map((p, pi) => (
                         <button key={pi} className="suggestion-btn" onClick={() => send(p.label)}>
-                          <span className="s-icon">{p.icon}</span>
+                          <span className="s-icon"><p.Icon size={14} /></span>
                           {p.label}
                         </button>
                       ))}
@@ -700,10 +707,10 @@ export default function ChatPage() {
         {showUploader && messages.length > 0 && (
           <div className="chat-upload-panel">
             <div className="chat-upload-panel-header">
-              <span>📤 Upload a document</span>
-              <button className="icon-btn" onClick={() => setShowUploader(false)}>✕</button>
+              <span><FiUpload size={14} /> Upload a document</span>
+              <button className="icon-btn" onClick={() => setShowUploader(false)}><FiX size={16} /></button>
             </div>
-            <PDFUploader onUploaded={onUploaded} onStatusChange={onDocStatusChange} />
+            <PDFUploader onUploaded={onUploaded} onStatusChange={onDocStatusChange} sessionId={sessionId} />
             <p className="chat-upload-limits">
               PDF · DOCX · TXT · PNG · JPG &nbsp;·&nbsp; Max 20 MB · 40 pages · 10 docs · 3 uploads / 10 min
             </p>
@@ -717,14 +724,14 @@ export default function ChatPage() {
             title="Upload a document"
             onClick={() => setShowUploader(v => !v)}
           >
-            📎
+            <FiPaperclip size={18} />
           </button>
           <textarea
             ref={inputRef}
             className="chat-input"
             placeholder={
               isProcessing
-                ? '⏳ Document is processing — please wait…'
+                ? 'Document is processing — please wait…'
                 : selectedDocs.length === 0
                   ? 'Select a document from the sidebar first…'
                   : 'Ask anything about your documents…'
@@ -738,7 +745,7 @@ export default function ChatPage() {
           />
           {loading ? (
             <button className="stop-btn" onClick={stopGeneration} title="Stop generating">
-              ■
+              <FiSquare size={14} />
             </button>
           ) : (
             <button
@@ -746,7 +753,7 @@ export default function ChatPage() {
               onClick={() => send()}
               disabled={!input.trim() || isProcessing}
             >
-              ➤
+              <FiSend size={16} />
             </button>
           )}
         </div>

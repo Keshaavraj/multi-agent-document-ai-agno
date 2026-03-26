@@ -1,65 +1,57 @@
 /**
- * Session utilities — CP08
- * Persists session_id, selected doc IDs, and UI preferences in localStorage.
- * Generates a new session_id on first visit.
+ * Session utilities
+ * session_id + selected_docs → sessionStorage (clears when tab closes)
+ * UI preferences (sidebar_open) → localStorage (persists across sessions)
  */
 
-const KEY = 'doc_ai_session'
+const SID_KEY      = 'doc_ai_sid'        // sessionStorage
+const SELECTED_KEY = 'doc_ai_selected'   // sessionStorage
+const PREFS_KEY    = 'doc_ai_prefs'      // localStorage
 
-const defaults = {
-  session_id:       null,   // UUID — generated on first load
-  selected_docs:    [],     // doc_ids the user has selected
-  sidebar_open:     true,   // left sidebar visibility
-  right_panel_open: true,   // right documents panel visibility
+const defaultPrefs = {
+  sidebar_open: true,
 }
 
-function load() {
+function loadPrefs() {
   try {
-    const raw = localStorage.getItem(KEY)
-    return raw ? { ...defaults, ...JSON.parse(raw) } : { ...defaults }
+    const raw = localStorage.getItem(PREFS_KEY)
+    return raw ? { ...defaultPrefs, ...JSON.parse(raw) } : { ...defaultPrefs }
   } catch {
-    return { ...defaults }
+    return { ...defaultPrefs }
   }
 }
 
-function save(data) {
-  try {
-    localStorage.setItem(KEY, JSON.stringify(data))
-  } catch {
-    // localStorage full or blocked — fail silently
-  }
+function savePrefs(prefs) {
+  try { localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)) } catch {}
 }
 
 export function getSession() {
-  const data = load()
-  if (!data.session_id) {
-    data.session_id = crypto.randomUUID()
-    save(data)
+  let session_id = sessionStorage.getItem(SID_KEY)
+  if (!session_id) {
+    session_id = crypto.randomUUID()
+    sessionStorage.setItem(SID_KEY, session_id)
   }
-  return data
+  let selected_docs = []
+  try {
+    const raw = sessionStorage.getItem(SELECTED_KEY)
+    selected_docs = raw ? JSON.parse(raw) : []
+  } catch {}
+  return { session_id, selected_docs, ...loadPrefs() }
 }
 
 export function saveSelectedDocs(doc_ids) {
-  const data = load()
-  data.selected_docs = doc_ids
-  save(data)
+  try { sessionStorage.setItem(SELECTED_KEY, JSON.stringify(doc_ids)) } catch {}
 }
 
 export function saveSidebarState(open) {
-  const data = load()
-  data.sidebar_open = open
-  save(data)
-}
-
-export function saveRightPanelState(open) {
-  const data = load()
-  data.right_panel_open = open
-  save(data)
+  const prefs = loadPrefs()
+  prefs.sidebar_open = open
+  savePrefs(prefs)
 }
 
 export function clearSessionMemory() {
-  const data = load()
-  data.session_id = crypto.randomUUID()   // new session = new ID
-  save(data)
-  return data.session_id
+  const new_id = crypto.randomUUID()
+  sessionStorage.setItem(SID_KEY, new_id)
+  sessionStorage.removeItem(SELECTED_KEY)
+  return new_id
 }

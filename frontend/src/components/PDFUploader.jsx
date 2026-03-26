@@ -1,12 +1,13 @@
 import { useRef, useState } from 'react'
 import axios from 'axios'
 import './PDFUploader.css'
+import { FiFile, FiX, FiCheckCircle, FiXCircle, FiLoader, FiClock, FiRefreshCw } from 'react-icons/fi'
 
 const BACKEND = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000'
 const MAX_SIZE_MB = 20
 const ALLOWED_EXTS = ['.pdf', '.docx', '.doc', '.txt', '.png', '.jpg', '.jpeg']
 
-export default function PDFUploader({ onUploaded, onStatusChange }) {
+export default function PDFUploader({ onUploaded, onStatusChange, sessionId = 'default' }) {
   const inputRef = useRef(null)
   const [dragging, setDragging] = useState(false)
   const [queue, setQueue]       = useState([])   // {name, status, progress, result, error}
@@ -46,7 +47,7 @@ export default function PDFUploader({ onUploaded, onStatusChange }) {
 
     try {
       // ── Step 1: transfer the file ──────────────────────
-      const res = await axios.post(`${BACKEND}/api/upload`, form, {
+      const res = await axios.post(`${BACKEND}/api/upload?session_id=${sessionId}`, form, {
         headers: { 'Content-Type': 'multipart/form-data' },
         onUploadProgress: evt => {
           const pct = Math.round((evt.loaded / evt.total) * 100)
@@ -137,7 +138,7 @@ export default function PDFUploader({ onUploaded, onStatusChange }) {
           hidden
           onChange={e => addFiles(e.target.files)}
         />
-        <span className="uploader__zone-icon">📄</span>
+        <span className="uploader__zone-icon"><FiFile size={32} /></span>
         <p className="uploader__zone-text">
           Drop files here or <span className="uploader__link">browse</span>
         </p>
@@ -149,7 +150,7 @@ export default function PDFUploader({ onUploaded, onStatusChange }) {
       {/* Processing banner */}
       {isOcring && (
         <div className="uploader__ocr-banner">
-          <span className="uploader__ocr-banner-spinner">⟳</span>
+          <span className="uploader__ocr-banner-spinner"><FiRefreshCw size={14} /></span>
           <span>Document Intelligence is at work — reading, understanding, and indexing your content…</span>
         </div>
       )}
@@ -161,13 +162,13 @@ export default function PDFUploader({ onUploaded, onStatusChange }) {
             <li key={e.id} className={`upload-item upload-item--${e.status}`}>
               <div className="upload-item__header">
                 <span className="upload-item__icon">
-                  {e.status === 'done' && '✅'}
-                  {e.status === 'error' && '❌'}
-                  {e.status === 'processing' && '⚙️'}
-                  {(e.status === 'uploading' || e.status === 'pending') && '⏳'}
+                  {e.status === 'done'                                  && <FiCheckCircle size={15} color="#3fb950" />}
+                  {e.status === 'error'                                 && <FiXCircle size={15} color="#f85149" />}
+                  {e.status === 'processing'                            && <FiLoader size={15} />}
+                  {(e.status === 'uploading' || e.status === 'pending') && <FiClock size={15} />}
                 </span>
                 <span className="upload-item__name">{e.name}</span>
-                <button className="upload-item__remove" onClick={() => remove(e.id)}>✕</button>
+                <button className="upload-item__remove" onClick={() => remove(e.id)}><FiX size={13} /></button>
               </div>
 
               {e.status === 'uploading' && (
