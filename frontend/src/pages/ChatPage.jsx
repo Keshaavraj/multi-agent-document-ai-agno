@@ -179,7 +179,20 @@ export default function ChatPage() {
     const msg = (text || input).trim()
     if (!msg || loading) return
     if (selectedDocs.length === 0) {
-      alert('Please select at least one document from the sidebar.')
+      setInput('')
+      setMessages(prev => [
+        ...prev,
+        { role: 'user', content: msg },
+        {
+          id:           crypto.randomUUID(),
+          role:         'assistant',
+          content:      "Hi! I'm **Document Intelligence AI** — I can analyze, summarize, and answer questions about your documents.\n\nTo get started, please upload a document using the **Upload** button in the sidebar (PDF, Word, TXT, or image files are supported), then select it to begin chatting.",
+          retrieval:    null,
+          agent:        null,
+          responseTime: null,
+          loading:      false,
+        },
+      ])
       return
     }
 
@@ -214,7 +227,11 @@ export default function ChatPage() {
 
       if (!res.ok) {
         const err = await res.json()
-        throw new Error(err.detail || 'Request failed')
+        const detail = err.detail
+        const msg = Array.isArray(detail)
+          ? detail.map(e => e.msg?.replace(/^Value error,\s*/i, '') || JSON.stringify(e)).join('; ')
+          : (detail || 'Request failed')
+        throw new Error(msg)
       }
 
       const reader  = res.body.getReader()
@@ -288,7 +305,7 @@ export default function ChatPage() {
       if (e.name !== 'AbortError') {
         setMessages(prev => prev.map(m =>
           m.id === assistantId
-            ? { ...m, content: `Failed to connect to the backend. Is it running?\n\n${e.message}`, loading: false }
+            ? { ...m, content: e.message || 'Something went wrong. Please try again.', loading: false }
             : m
         ))
       }
