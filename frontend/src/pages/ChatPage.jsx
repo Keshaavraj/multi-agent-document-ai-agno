@@ -188,15 +188,27 @@ export default function ChatPage() {
     })
     setShowUploader(false)
 
-    // Determine sample prompts by file type
+    // Determine sample prompts by file type — {icon, label}
     const ext  = result.filename?.split('.').pop()?.toLowerCase() || ''
     const isImage = ['png', 'jpg', 'jpeg'].includes(ext)
     const isSheet = ['csv', 'xlsx'].includes(ext)
     const prompts = isImage
-      ? ['Describe what you see in this image', 'Are there any numbers or data in this image?', 'What text is visible?']
+      ? [
+          { icon: '🖼️', label: 'Describe what you see in this image' },
+          { icon: '🔢', label: 'Are there any numbers or data in this image?' },
+          { icon: '🔤', label: 'What text is visible?' },
+        ]
       : isSheet
-      ? ['Summarise the data', 'What are the key figures?', 'Calculate the totals']
-      : ['Summarise this document', 'What are the key points?', 'Extract all figures and numbers']
+      ? [
+          { icon: '📊', label: 'Summarise the data' },
+          { icon: '🔑', label: 'What are the key figures?' },
+          { icon: '🧮', label: 'Calculate the totals' },
+        ]
+      : [
+          { icon: '📋', label: 'Summarise this document' },
+          { icon: '💡', label: 'What are the key points?' },
+          { icon: '🔢', label: 'Extract all figures and numbers' },
+        ]
 
     setMessages(prev => [...prev, {
       id:           crypto.randomUUID(),
@@ -670,8 +682,9 @@ export default function ChatPage() {
                   {msg.prompts && msg.prompts.length > 0 && (
                     <div className="suggestion-btns">
                       {msg.prompts.map((p, pi) => (
-                        <button key={pi} className="suggestion-btn" onClick={() => send(p)}>
-                          {p}
+                        <button key={pi} className="suggestion-btn" onClick={() => send(p.label)}>
+                          <span className="s-icon">{p.icon}</span>
+                          {p.label}
                         </button>
                       ))}
                     </div>

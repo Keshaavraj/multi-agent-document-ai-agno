@@ -706,20 +706,23 @@
 /* Edit button on user messages */
 .message-bubble--user {
   position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.4rem;
 }
 .edit-msg-btn {
-  position: absolute;
-  top: 6px;
-  right: -28px;
   background: none;
   border: none;
   color: var(--text-secondary);
-  font-size: 0.85rem;
+  font-size: 0.82rem;
   cursor: pointer;
   opacity: 0;
   transition: opacity 0.15s;
   padding: 2px 4px;
   border-radius: 4px;
+  flex-shrink: 0;
+  margin-top: 2px;
+  align-self: flex-start;
 }
 .message-bubble--user:hover .edit-msg-btn { opacity: 1; }
 .edit-msg-btn:hover { color: var(--accent-blue); }
@@ -729,23 +732,33 @@
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
-  margin-top: 0.75rem;
+  margin-top: 0.85rem;
 }
 .suggestion-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
   background: var(--bg-secondary);
-  border: 1px solid var(--border);
-  border-radius: 20px;
-  padding: 0.4rem 0.9rem;
+  border: 1.5px solid var(--accent-blue);
+  border-radius: 10px;
+  padding: 0.5rem 1rem;
   font-size: 0.82rem;
-  color: var(--text-primary);
+  color: var(--accent-blue);
   cursor: pointer;
-  transition: background 0.15s, border-color 0.15s;
+  font-weight: 500;
+  transition: background 0.15s, color 0.15s, transform 0.1s, box-shadow 0.15s;
   text-align: left;
+  box-shadow: 0 1px 4px rgba(47,129,247,0.10);
 }
 .suggestion-btn:hover {
   background: var(--accent-blue);
-  border-color: var(--accent-blue);
   color: #fff;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(47,129,247,0.25);
+}
+.suggestion-btn .s-icon {
+  font-size: 1rem;
+  flex-shrink: 0;
 }
 
 /* ── Document processing status banner ── */
@@ -897,7 +910,46 @@
   /* Sidebar inner touch targets */
   .icon-btn { padding: 0.5rem; min-width: 36px; min-height: 36px; }
   .doc-item { padding: 0.55rem 0.5rem; }
-  .doc-item-delete { padding: 0.4rem; font-size: 0.9rem; }
+  .doc-item-delete { padding: 0.4rem; font-size: 0.9rem; opacity: 1; }
   .btn-new-chat { padding: 0.55rem; font-size: 0.82rem; }
   .btn-upload-cta { padding: 0.65rem 1.2rem; font-size: 0.9rem; }
+
+  /* Stop button — match send-btn mobile size */
+  .stop-btn {
+    width: 40px;
+    height: 40px;
+    font-size: 0.85rem;
+  }
+
+  /* Edit button — move inside bubble on mobile, always visible */
+  .edit-msg-btn {
+    position: static;
+    display: inline-block;
+    opacity: 0.6;
+    margin-left: 0.4rem;
+    font-size: 0.75rem;
+    vertical-align: middle;
+  }
+
+  /* Suggestion buttons — full width stack on small screens */
+  .suggestion-btns {
+    flex-direction: column;
+  }
+  .suggestion-btn {
+    width: 100%;
+    font-size: 0.8rem;
+    padding: 0.5rem 0.8rem;
+    border-radius: 8px;
+  }
+
+  /* Doc list header — tighter on narrow sidebar */
+  .doc-list-header {
+    flex-wrap: wrap;
+    gap: 0.3rem;
+  }
+  .doc-action-btn {
+    font-size: 0.68rem;
+    padding: 0.25rem 0.45rem;
+    min-height: 28px;
+  }
 }
