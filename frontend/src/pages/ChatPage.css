@@ -279,6 +279,39 @@
 }
 .doc-item-delete:hover { opacity: 1; }
 
+.doc-list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.4rem;
+}
+.doc-list-header .sidebar-section-title { margin-bottom: 0; }
+
+.doc-list-actions {
+  display: flex;
+  gap: 0.4rem;
+}
+.doc-action-btn {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-secondary);
+  font-size: 0.7rem;
+  padding: 0.2rem 0.5rem;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.doc-action-btn:hover {
+  background: var(--accent-blue);
+  border-color: var(--accent-blue);
+  color: #fff;
+}
+.doc-action-btn--danger:hover {
+  background: #e53e3e;
+  border-color: #e53e3e;
+  color: #fff;
+}
+
 /* ── Main chat area ── */
 .chat-main {
   flex: 1;

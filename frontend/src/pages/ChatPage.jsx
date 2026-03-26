@@ -459,7 +459,23 @@ export default function ChatPage() {
 
         {/* Document list — select which docs to query */}
         <div className="sidebar-section sidebar-section--docs">
-          <h3 className="sidebar-section-title">📄 My Documents</h3>
+          <div className="doc-list-header">
+            <h3 className="sidebar-section-title">📄 My Documents</h3>
+            <div className="doc-list-actions">
+              <button
+                className="doc-action-btn"
+                title="Upload new document"
+                onClick={() => setShowUploader(v => !v)}
+              >+ Upload</button>
+              {docs.length > 0 && (
+                <button
+                  className="doc-action-btn doc-action-btn--danger"
+                  title="Remove all documents"
+                  onClick={() => { if (window.confirm('Remove all documents?')) docs.forEach(d => deleteDoc(d.doc_id)) }}
+                >Clear all</button>
+              )}
+            </div>
+          </div>
           {docs.length === 0 ? (
             <p className="sidebar-empty">No documents yet. Use the chat to upload one.</p>
           ) : (
