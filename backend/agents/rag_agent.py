@@ -30,10 +30,19 @@ def build_context(chunks: list[dict]) -> str:
     """Format retrieved chunks into a readable context block for the agent."""
     if not chunks:
         return "No relevant content found in the selected documents."
+
+    unique_files = list(dict.fromkeys(c["filename"] for c in chunks))
+    header = (
+        f"NOTE: Content retrieved from {len(unique_files)} document(s): "
+        + ", ".join(f'"{f}"' for f in unique_files)
+        + ". ALWAYS prefix every fact with [filename, Page X] so the user knows which document it came from.\n\n"
+        if len(unique_files) > 1 else ""
+    )
+
     lines = []
     for c in chunks:
         lines.append(f"[{c['filename']}, Page {c['page_num']}]\n{c['text']}")
-    return "\n\n---\n\n".join(lines)
+    return header + "\n\n---\n\n".join(lines)
 
 
 def format_retrieval_meta(chunks: list[dict]) -> list[dict]:

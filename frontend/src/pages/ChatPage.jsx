@@ -182,6 +182,28 @@ export default function ChatPage() {
       return next
     })
     setShowUploader(false)
+
+    // Determine sample prompts by file type
+    const ext  = result.filename?.split('.').pop()?.toLowerCase() || ''
+    const isImage = ['png', 'jpg', 'jpeg'].includes(ext)
+    const isSheet = ['csv', 'xlsx'].includes(ext)
+    const prompts = isImage
+      ? ['Describe what you see in this image', 'Are there any numbers or data in this image?', 'What text is visible?']
+      : isSheet
+      ? ['Summarise the data', 'What are the key figures?', 'Calculate the totals']
+      : ['Summarise this document', 'What are the key points?', 'Extract all figures and numbers']
+
+    const promptList = prompts.map(p => `• *${p}*`).join('\n')
+
+    setMessages(prev => [...prev, {
+      id:           crypto.randomUUID(),
+      role:         'assistant',
+      content:      `**${result.filename}** is ready — I've fully understood its content and built a knowledge index across ${result.total_pages} page${result.total_pages !== 1 ? 's' : ''} (${result.chunks} knowledge chunks).\n\nYou can ask me anything about it. Here are a few ideas to get started:\n\n${promptList}\n\nOr type your own question below.`,
+      retrieval:    null,
+      agent:        null,
+      responseTime: null,
+      loading:      false,
+    }])
   }
 
   // Called by PDFUploader on every status change

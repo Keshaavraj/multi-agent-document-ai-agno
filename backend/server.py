@@ -194,15 +194,28 @@ async def chat(request: Request, req: ChatRequest):
     history   = get_history(req.session_id)
 
     # Build a richer retrieval query for short follow-up questions
-    # (e.g. "what about the total?" needs prior context to retrieve well)
     retrieval_query = req.message
     if history and len(req.message.split()) < 12:
         recent_user_msgs = [m["content"] for m in history[-4:] if m["role"] == "user"]
         if recent_user_msgs:
             retrieval_query = " ".join(recent_user_msgs[-2:]) + " " + req.message
 
+    # If user references a specific doc by name, search only that doc first
+    # then fall back to all selected docs if nothing found
+    msg_lower      = req.message.lower()
+    doc_names      = {d.doc_id: d.filename for d in DOC_REGISTRY.values() if d.doc_id in req.doc_ids}
+    focused_doc_id = next(
+        (did for did, fname in doc_names.items() if fname.lower().split('.')[0] in msg_lower),
+        None,
+    )
+
     # Retrieve chunks + build context
-    chunks    = retrieve(retrieval_query, req.doc_ids)
+    if focused_doc_id:
+        chunks = retrieve(retrieval_query, [focused_doc_id])
+        if not chunks:                         # nothing in focused doc — widen search
+            chunks = retrieve(retrieval_query, req.doc_ids)
+    else:
+        chunks = retrieve(retrieval_query, req.doc_ids)
     ret_meta  = format_retrieval_meta(chunks)
     context   = build_context(chunks)
     intent    = classify_intent(req.message)
@@ -226,6 +239,19 @@ async def chat(request: Request, req: ChatRequest):
             loop = asyncio.get_event_loop()
 
             # ── Step 1: run specialist agent silently, collect draft ──
+            def _extract(chunk) -> str:
+                """Safely extract text from an agno streaming chunk."""
+                content = getattr(chunk, "content", None)
+                if isinstance(content, str):
+                    return content
+                # Some agno events carry content as a nested message object
+                msg = getattr(chunk, "message", None)
+                if msg:
+                    c = getattr(msg, "content", None)
+                    if isinstance(c, str):
+                        return c
+                return ""
+
             def run_specialist():
                 return list(agent.run(
                     req.message,
@@ -234,13 +260,24 @@ async def chat(request: Request, req: ChatRequest):
                 ))
 
             specialist_chunks = await loop.run_in_executor(None, run_specialist)
-            draft = "".join(
-                getattr(c, "content", None) or "" for c in specialist_chunks
-            ).strip()
+            draft = "".join(_extract(c) for c in specialist_chunks).strip()
 
+            # Fallback: retry without streaming if draft is empty
             if not draft:
-                yield f"data: {json.dumps({'type': 'error', 'message': 'No response from specialist agent.'})}\n\n"
-                return
+                def run_specialist_sync():
+                    resp = agent.run(req.message, messages=history, stream=False)
+                    content = getattr(resp, "content", None)
+                    return content if isinstance(content, str) else ""
+
+                draft = await loop.run_in_executor(None, run_specialist_sync)
+                draft = (draft or "").strip()
+
+            # If still empty, build a clear "not found" message from context
+            if not draft:
+                if not chunks:
+                    draft = "I could not find relevant content in the selected documents for your query. Please make sure the correct document is selected, or try rephrasing your question."
+                else:
+                    draft = "I found some content in your documents but was unable to generate a response. Please try rephrasing your question."
 
             # ── Step 2: signal consolidation starting ─────────────────
             yield f"data: {json.dumps({'type': 'consolidating'})}\n\n"
