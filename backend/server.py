@@ -157,7 +157,16 @@ async def langfuse_test():
     project_id = os.getenv("LANGFUSE_PROJECT_ID", "")
 
     if not pk or not sk:
-        return {"status": "error", "reason": "LANGFUSE_PUBLIC_KEY or LANGFUSE_SECRET_KEY not set in env"}
+        return {
+            "status": "error",
+            "reason": "LANGFUSE_PUBLIC_KEY or LANGFUSE_SECRET_KEY not set in env",
+            "debug": {
+                "LANGFUSE_PUBLIC_KEY_set": bool(pk),
+                "LANGFUSE_SECRET_KEY_set": bool(sk),
+                "LANGFUSE_HOST": host,
+                "GROQ_API_KEY_set": bool(os.getenv("GROQ_API_KEY")),
+            }
+        }
 
     try:
         from langfuse import Langfuse
