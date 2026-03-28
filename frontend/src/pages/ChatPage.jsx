@@ -12,10 +12,69 @@ import {
   FiZap, FiSearch, FiCheckCircle, FiXCircle, FiLoader,
   FiClock, FiCheckSquare, FiSettings, FiRefreshCw,
   FiClipboard, FiImage, FiType, FiBarChart2, FiHash, FiKey,
-  FiActivity, FiExternalLink,
+  FiActivity, FiExternalLink, FiDownload, FiDollarSign,
 } from 'react-icons/fi'
+import * as XLSX from 'xlsx'
 
 const scoreColor = (v) => v >= 0.8 ? '#3fb950' : v >= 0.6 ? '#f0883e' : '#f85149'
+
+const hasMarkdownTable = (text) => /\|.+\|/.test(text)
+
+const parseMarkdownTables = (content) => {
+  const tables = []
+  const blocks = content.split(/\n{2,}/)
+  for (const block of blocks) {
+    const lines = block.split('\n').filter(l => l.trim().startsWith('|'))
+    if (lines.length < 2) continue
+    const headers = lines[0].split('|').map(c => c.trim()).filter(Boolean)
+    const rows = lines.slice(2)
+      .map(l => l.split('|').map(c => c.trim()).filter(Boolean))
+      .filter(r => r.length > 0)
+    if (headers.length > 0 && rows.length > 0) tables.push({ headers, rows })
+  }
+  return tables
+}
+
+const exportToExcel = (content, filename = 'export') => {
+  const tables = parseMarkdownTables(content)
+  if (!tables.length) return
+  const wb = XLSX.utils.book_new()
+  tables.forEach((t, i) => {
+    const ws = XLSX.utils.aoa_to_sheet([t.headers, ...t.rows])
+    XLSX.utils.book_append_sheet(wb, ws, `Table ${i + 1}`)
+  })
+  XLSX.writeFile(wb, `${filename}.xlsx`)
+}
+
+const exportToPDF = (content, title = 'Document') => {
+  const win = window.open('', '_blank')
+  win.document.write(`
+    <html><head><title>${title}</title>
+    <style>
+      body { font-family: Arial, sans-serif; padding: 2rem; color: #111; }
+      h1 { font-size: 1.2rem; margin-bottom: 1rem; }
+      table { border-collapse: collapse; width: 100%; margin: 1rem 0; font-size: 0.85rem; }
+      th, td { border: 1px solid #ccc; padding: 0.4rem 0.7rem; text-align: left; }
+      th { background: #f0f0f0; font-weight: bold; }
+      pre { background: #f5f5f5; padding: 1rem; border-radius: 4px; }
+    </style></head>
+    <body>
+    <h1>${title}</h1>
+    <div id="content"></div>
+    <script>
+      // Convert markdown tables to HTML
+      const raw = ${JSON.stringify(content)};
+      const html = raw
+        .replace(/^#{1,3} (.+)$/gm, (_, t) => '<h3>' + t + '</h3>')
+        .replace(/\\*\\*(.+?)\\*\\*/g, '<strong>$1</strong>')
+        .replace(/\\n/g, '<br>');
+      document.getElementById('content').innerHTML = html;
+      setTimeout(() => { window.print(); }, 300);
+    </script>
+    </body></html>
+  `)
+  win.document.close()
+}
 
 const BACKEND = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000'
 
@@ -23,6 +82,7 @@ const AGENT_COLORS = {
   'RAG Agent':     '#2f81f7',
   'Summary Agent': '#a371f7',
   'Analyst Agent': '#f0883e',
+  'Invoice Agent': '#3fb950',
 }
 
 const QUICK_PROMPTS = [
@@ -200,38 +260,69 @@ export default function ChatPage() {
     })
     setShowUploader(false)
 
-    // Determine sample prompts by file type — {icon, label}
-    const ext  = result.filename?.split('.').pop()?.toLowerCase() || ''
-    const isImage = ['png', 'jpg', 'jpeg'].includes(ext)
-    const isSheet = ['csv', 'xlsx'].includes(ext)
+    // Determine sample prompts by file type and content — {icon, label}
+    const ext        = result.filename?.split('.').pop()?.toLowerCase() || ''
+    const isImage    = ['png', 'jpg', 'jpeg'].includes(ext)
+    const isSheet    = ['csv', 'xlsx'].includes(ext)
+    const isScanned  = result.scanned_pages > 0
+    const isMultiPage = result.total_pages > 3
+
     const prompts = isImage
       ? [
-          { Icon: FiImage,      label: 'Describe what you see in this image' },
-          { Icon: FiHash,       label: 'Are there any numbers or data in this image?' },
-          { Icon: FiType,       label: 'What text is visible?' },
+          { Icon: FiImage,     label: 'Describe everything you see in this image' },
+          { Icon: FiType,      label: 'What text or words are visible in this image?' },
+          { Icon: FiHash,      label: 'Are there any numbers, charts or data in this image?' },
+          { Icon: FiSearch,    label: 'What is the main subject or focus of this image?' },
+          { Icon: FiClipboard, label: 'Give me a detailed description of this image' },
         ]
       : isSheet
       ? [
-          { Icon: FiBarChart2,  label: 'Summarise the data' },
-          { Icon: FiKey,        label: 'What are the key figures?' },
-          { Icon: FiHash,       label: 'Calculate the totals' },
+          { Icon: FiBarChart2, label: 'Summarise the data in this file' },
+          { Icon: FiKey,       label: 'What are the key figures and trends?' },
+          { Icon: FiHash,      label: 'Calculate the totals and averages' },
+          { Icon: FiSearch,    label: 'What insights can you find in this data?' },
+          { Icon: FiClipboard, label: 'List all column headers and what they represent' },
+        ]
+      : isScanned
+      ? [
+          { Icon: FiType,      label: 'What does this document say?' },
+          { Icon: FiClipboard, label: 'Summarise the content of this document' },
+          { Icon: FiHash,      label: 'Extract all numbers and important data' },
+          { Icon: FiSearch,    label: 'What is the main topic of this document?' },
+          { Icon: FiZap,       label: 'What are the key points?' },
+        ]
+      : isMultiPage
+      ? [
+          { Icon: FiClipboard, label: 'Give me an executive summary of this document' },
+          { Icon: FiZap,       label: 'What are the key findings and conclusions?' },
+          { Icon: FiSearch,    label: 'What problem does this document address?' },
+          { Icon: FiHash,      label: 'Extract all figures, statistics and numbers' },
+          { Icon: FiDatabase,  label: 'List the main topics and sections covered' },
         ]
       : [
-          { Icon: FiClipboard,  label: 'Summarise this document' },
-          { Icon: FiZap,        label: 'What are the key points?' },
-          { Icon: FiHash,       label: 'Extract all figures and numbers' },
+          { Icon: FiClipboard, label: 'Summarise this document' },
+          { Icon: FiZap,       label: 'What are the key points?' },
+          { Icon: FiSearch,    label: 'What is this document about?' },
+          { Icon: FiHash,      label: 'Extract all figures and numbers' },
+          { Icon: FiDatabase,  label: 'List the main topics covered' },
         ]
 
+    // Show ready message immediately, add suggestion buttons after a short
+    // delay so LanceDB has time to make the newly indexed vectors queryable.
+    const msgId = crypto.randomUUID()
     setMessages(prev => [...prev, {
-      id:           crypto.randomUUID(),
+      id:           msgId,
       role:         'assistant',
       content:      `**${result.filename}** is ready — I've fully understood its content and built a knowledge index across ${result.total_pages} page${result.total_pages !== 1 ? 's' : ''} (${result.chunks} knowledge chunks).\n\nYou can ask me anything about it. Try one of these or type your own question below:`,
-      prompts,
+      prompts:      [],
       retrieval:    null,
       agent:        null,
       responseTime: null,
       loading:      false,
     }])
+    setTimeout(() => {
+      setMessages(prev => prev.map(m => m.id === msgId ? { ...m, prompts } : m))
+    }, 2500)
   }
 
   // Called by PDFUploader on every status change
@@ -347,7 +438,7 @@ export default function ChatPage() {
             if (event.type === 'retrieval_meta') {
               setMessages(prev => prev.map(m =>
                 m.id === assistantId
-                  ? { ...m, retrieval: event.chunks, agent: event.routed_to, session: event.session }
+                  ? { ...m, retrieval: event.chunks, agent: event.routed_to, session: event.session, retrievalWarning: event.retrieval_warning || null }
                   : m
               ))
               if (event.session) setSessionTurns(event.session.turns)
@@ -519,6 +610,7 @@ export default function ChatPage() {
                     {name === 'RAG Agent'     && 'Retrieval & Q&A'}
                     {name === 'Summary Agent' && 'Document Overview'}
                     {name === 'Analyst Agent' && 'Data Extraction'}
+                    {name === 'Invoice Agent' && 'Bills & Invoices'}
                   </div>
                 </div>
               </div>
@@ -699,6 +791,12 @@ export default function ChatPage() {
                     </div>
                   )}
 
+                  {msg.retrievalWarning && (
+                    <div className="retrieval-warning">
+                      <FiXCircle size={12} /> {msg.retrievalWarning}
+                    </div>
+                  )}
+
                   {msg.retrieval && msg.retrieval.length > 0 && (
                     <details className="retrieval-panel">
                       <summary className="retrieval-panel-summary">
@@ -743,6 +841,26 @@ export default function ChatPage() {
                       </ReactMarkdown>
                     </div>
                   )}
+                  {msg.content && hasMarkdownTable(msg.content) && !msg.loading && (
+                    <div className="export-btns">
+                      <span className="export-label"><FiDownload size={11} /> Export</span>
+                      <button
+                        className="export-btn"
+                        onClick={() => exportToExcel(msg.content, 'document-data')}
+                        title="Download as Excel"
+                      >
+                        <FiDownload size={12} /> Excel
+                      </button>
+                      <button
+                        className="export-btn export-btn--pdf"
+                        onClick={() => exportToPDF(msg.content, 'Document Export')}
+                        title="Save as PDF"
+                      >
+                        <FiDownload size={12} /> PDF
+                      </button>
+                    </div>
+                  )}
+
                   {msg.evaluating && !msg.evalScores && (
                     <div className="evaluating-indicator">
                       <FiLoader size={11} /> Evaluating response quality…

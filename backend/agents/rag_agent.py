@@ -26,12 +26,37 @@ ABSOLUTE RULES:
 """
 
 
+IMAGE_EXTS = {'.png', '.jpg', '.jpeg', '.webp', '.gif'}
+
+def _is_image_file(filename: str) -> bool:
+    return any(filename.lower().endswith(ext) for ext in IMAGE_EXTS)
+
+
 def build_context(chunks: list[dict]) -> str:
     """Format retrieved chunks into a readable context block for the agent."""
     if not chunks:
         return "No relevant content found in the selected documents."
 
     unique_files = list(dict.fromkeys(c["filename"] for c in chunks))
+
+    # Detect if all sources are image files — prefix context accordingly
+    all_images = all(_is_image_file(f) for f in unique_files)
+    some_images = any(_is_image_file(f) for f in unique_files)
+
+    if all_images:
+        preamble = (
+            "IMPORTANT: The following content is a vision analysis extracted from an uploaded image "
+            "using an AI vision model. This text IS the image — treat it as if you are directly "
+            "looking at the image and answer the user's question based on this analysis.\n\n"
+        )
+    elif some_images:
+        preamble = (
+            "IMPORTANT: Some sources below are vision analyses of uploaded images. "
+            "Treat image-sourced content as a direct visual description.\n\n"
+        )
+    else:
+        preamble = ""
+
     header = (
         f"NOTE: Content retrieved from {len(unique_files)} document(s): "
         + ", ".join(f'"{f}"' for f in unique_files)
@@ -42,7 +67,7 @@ def build_context(chunks: list[dict]) -> str:
     lines = []
     for c in chunks:
         lines.append(f"[{c['filename']}, Page {c['page_num']}]\n{c['text']}")
-    return header + "\n\n---\n\n".join(lines)
+    return preamble + header + "\n\n---\n\n".join(lines)
 
 
 def format_retrieval_meta(chunks: list[dict]) -> list[dict]:

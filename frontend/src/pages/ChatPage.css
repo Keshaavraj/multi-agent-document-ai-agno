@@ -819,6 +819,67 @@
 /* ── Sidebar backdrop (mobile only) ── */
 .sidebar-backdrop { display: none; }
 
+/* ── Export buttons ── */
+.export-btns {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.8rem;
+  padding-top: 0.7rem;
+  border-top: 1px solid var(--border);
+}
+
+.export-label {
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-right: 0.2rem;
+}
+
+.export-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.3rem 0.7rem;
+  border-radius: 6px;
+  border: 1px solid var(--accent-green);
+  background: transparent;
+  color: var(--accent-green);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.export-btn:hover {
+  background: var(--accent-green);
+  color: #fff;
+}
+.export-btn--pdf {
+  border-color: var(--accent-orange);
+  color: var(--accent-orange);
+}
+.export-btn--pdf:hover {
+  background: var(--accent-orange);
+  color: #fff;
+}
+
+/* ── Retrieval limit warning ── */
+.retrieval-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.4rem;
+  font-size: 0.75rem;
+  color: var(--accent-orange);
+  background: rgba(240, 136, 62, 0.08);
+  border: 1px solid rgba(240, 136, 62, 0.25);
+  border-radius: 8px;
+  padding: 0.5rem 0.7rem;
+  margin-bottom: 0.7rem;
+  line-height: 1.5;
+}
+
 /* ── Evaluating indicator ── */
 .evaluating-indicator {
   display: flex;

@@ -13,7 +13,7 @@ LANCEDB_PATH = os.environ.get("LANCEDB_PATH", "./lancedb_data")
 EMBED_MODEL   = "BAAI/bge-small-en-v1.5"   # ~25 MB, fast, no API key
 CHUNK_SIZE    = 512    # characters per chunk
 CHUNK_OVERLAP = 80     # overlap between chunks
-TOP_K         = 6      # chunks returned per query
+TOP_K         = 12     # chunks returned per query
 EMBED_BATCH   = 32     # embed this many chunks at a time — limits peak memory
 
 _embedder: TextEmbedding | None = None

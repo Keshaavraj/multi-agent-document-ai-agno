@@ -21,6 +21,7 @@ from agents.rag_agent import build_context, format_retrieval_meta, create_rag_ag
 from agents.summary_agent import create_summary_agent
 from agents.analyst_agent import create_analyst_agent
 from agents.consolidator_agent import create_consolidator_agent
+from agents.invoice_agent import create_invoice_agent
 from agents.team import classify_intent
 from evaluation.ragas_eval import evaluate as ragas_evaluate
 
@@ -109,6 +110,7 @@ AGENT_LABELS = {
     "rag":     "RAG Agent",
     "summary": "Summary Agent",
     "analyst": "Analyst Agent",
+    "invoice": "Invoice Agent",
 }
 
 
@@ -316,9 +318,51 @@ async def chat(request: Request, req: ChatRequest):
     context   = build_context(chunks)
     intent    = classify_intent(req.message)
 
+    # If user explicitly asks for table format, append a hard formatting instruction
+    TABLE_KEYWORDS = {"table", "tabular", "in a table", "as a table", "table format", "show as table", "display as table"}
+    msg_lower = req.message.lower()
+    agent_message = req.message
+    if any(k in msg_lower for k in TABLE_KEYWORDS):
+        agent_message = req.message + "\n\n[FORMATTING INSTRUCTION: You MUST present the answer using markdown tables. Every piece of structured data must be in a | column | format table.]"
+
+    # Detect retrieval limit hit — warn agent + UI when doc may have more content
+    TOP_K = 12
+    IMAGE_EXTS = {'.png', '.jpg', '.jpeg', '.webp'}
+    selected_filenames = [
+        session_registry[did].filename
+        for did in valid_doc_ids if did in session_registry
+    ]
+    is_image_upload = any(
+        any(f.lower().endswith(ext) for ext in IMAGE_EXTS)
+        for f in selected_filenames
+    )
+    retrieval_capped = len(chunks) >= TOP_K
+    retrieval_warning = None
+    if retrieval_capped:
+        if is_image_upload:
+            retrieval_warning = (
+                f"This image may contain more elements than could be fully analysed. "
+                f"Only the {TOP_K} most relevant sections were retrieved. "
+                f"For best results, ask about one specific area or element at a time."
+            )
+            context += (
+                f"\n\n[SYSTEM LIMIT]: Only {TOP_K} of the most relevant chunks could be "
+                f"retrieved from this image. The image may contain additional elements "
+                f"not shown above. If the user asks about something not in the context, "
+                f"clearly tell them: 'This image has many elements — I can only analyse "
+                f"{TOP_K} sections at a time. Please ask about a specific area or element.'"
+            )
+        else:
+            retrieval_warning = (
+                f"This document is large — only the {TOP_K} most relevant sections were "
+                f"retrieved for your query. For more specific results, try narrowing your question."
+            )
+
     # Route directly to the right agent — avoids fragile LLM tool-call routing
     if intent == "summary":
         agent = create_summary_agent(context)
+    elif intent == "invoice":
+        agent = create_invoice_agent(context)
     elif intent == "analyst":
         agent = create_analyst_agent(context)
     else:
@@ -351,7 +395,7 @@ async def chat(request: Request, req: ChatRequest):
 
         # Event 1 — retrieval metadata + routing decision + session info
         stats = session_stats(req.session_id)
-        yield f"data: {json.dumps({'type': 'retrieval_meta', 'chunks': ret_meta, 'routed_to': AGENT_LABELS[intent], 'intent': intent, 'session': stats})}\n\n"
+        yield f"data: {json.dumps({'type': 'retrieval_meta', 'chunks': ret_meta, 'routed_to': AGENT_LABELS[intent], 'intent': intent, 'session': stats, 'retrieval_warning': retrieval_warning})}\n\n"
 
         final_response = []
         eval_scores    = None
@@ -383,7 +427,7 @@ async def chat(request: Request, req: ChatRequest):
 
             def run_specialist():
                 return list(agent.run(
-                    req.message,
+                    agent_message,
                     messages=history,
                     stream=True,
                 ))
@@ -394,7 +438,7 @@ async def chat(request: Request, req: ChatRequest):
             # Fallback: retry without streaming if draft is empty
             if not draft:
                 def run_specialist_sync():
-                    resp = agent.run(req.message, messages=history, stream=False)
+                    resp = agent.run(agent_message, messages=history, stream=False)
                     content = getattr(resp, "content", None)
                     return content if isinstance(content, str) else ""
 
@@ -404,7 +448,21 @@ async def chat(request: Request, req: ChatRequest):
             # If still empty, build a clear "not found" message from context
             if not draft:
                 if not chunks:
-                    draft = "I could not find relevant content in the selected documents for your query. Please make sure the correct document is selected, or try rephrasing your question."
+                    # Check if selected docs are image files — give a specific hint
+                    IMAGE_EXTS = {'.png', '.jpg', '.jpeg', '.webp'}
+                    selected_filenames = [
+                        session_registry[did].filename
+                        for did in valid_doc_ids
+                        if did in session_registry
+                    ]
+                    is_image_doc = any(
+                        any(f.lower().endswith(ext) for ext in IMAGE_EXTS)
+                        for f in selected_filenames
+                    )
+                    if is_image_doc:
+                        draft = "The image has been indexed but I could not retrieve its content for this query. Please try asking again — for example: 'Describe this image' or 'What do you see in this image?'"
+                    else:
+                        draft = "I could not find relevant content in the selected documents for your query. Please make sure the correct document is selected, or try rephrasing your question."
                 else:
                     draft = "I found some content in your documents but was unable to generate a response. Please try rephrasing your question."
 

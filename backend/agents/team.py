@@ -36,25 +36,32 @@ SUMMARY_KEYWORDS = {
     "key points", "main topics", "what is this about", "what is this document",
     "introduction", "outline",
 }
+INVOICE_KEYWORDS = {
+    "invoice", "bill", "receipt", "quotation", "purchase order", "po number",
+    "line item", "line items", "amount due", "total due", "grand total",
+    "subtotal", "sub total", "tax amount", "gst", "vat", "vendor",
+    "payable", "payment due", "due date", "overdue", "billing address",
+    "item description", "unit price", "qty", "quantity",
+}
 ANALYST_KEYWORDS = {
     "table", "extract", "statistics", "statistic", "data", "numbers",
     "list all", "compare", "percentage", "figures", "how many", "chart",
     "breakdown", "metrics", "calculate", "calculation", "total", "subtotal",
-    "sum", "add up", "invoice", "bill", "amount", "price", "cost", "tax",
-    "discount", "balance", "due", "payment", "charges", "fees", "grand total",
+    "sum", "add up", "amount", "price", "cost", "tax",
+    "discount", "balance", "due", "payment", "charges", "fees",
 }
 
 
 def classify_intent(message: str) -> str:
     """
     Fast keyword-based intent classifier.
-    Returns 'summary', 'analyst', or 'rag'.
-    Used to set the expected agent in retrieval_meta so the UI can
-    show which agent was selected before the response streams.
+    Returns 'summary', 'invoice', 'analyst', or 'rag'.
     """
     lower = message.lower()
     if any(k in lower for k in SUMMARY_KEYWORDS):
         return "summary"
+    if any(k in lower for k in INVOICE_KEYWORDS):
+        return "invoice"
     if any(k in lower for k in ANALYST_KEYWORDS):
         return "analyst"
     return "rag"
