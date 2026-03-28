@@ -22,8 +22,30 @@ from agents.summary_agent import create_summary_agent
 from agents.analyst_agent import create_analyst_agent
 from agents.consolidator_agent import create_consolidator_agent
 from agents.team import classify_intent
+from evaluation.ragas_eval import evaluate as ragas_evaluate
 
 load_dotenv()
+
+# ── Langfuse (lazy init — only when env vars are present) ──────────────────────
+_langfuse = None
+
+def _get_langfuse():
+    global _langfuse
+    if _langfuse is not None:
+        return _langfuse
+    pk = os.getenv("LANGFUSE_PUBLIC_KEY")
+    sk = os.getenv("LANGFUSE_SECRET_KEY")
+    if pk and sk:
+        try:
+            from langfuse import Langfuse
+            _langfuse = Langfuse(
+                public_key=pk,
+                secret_key=sk,
+                host=os.getenv("LANGFUSE_HOST", "https://cloud.langfuse.com"),
+            )
+        except Exception:
+            pass
+    return _langfuse
 
 # ── Rate limiter ──────────────────────────────────────────
 limiter = Limiter(key_func=get_remote_address)
@@ -258,15 +280,38 @@ async def chat(request: Request, req: ChatRequest):
         agent = create_rag_agent(context)
 
     async def event_stream():
+        loop = asyncio.get_running_loop()
+
+        # ── Langfuse trace (no-op if not configured) ──────────────────
+        lf    = _get_langfuse()
+        trace = None
+        if lf:
+            try:
+                trace = lf.trace(
+                    name="document-qa",
+                    session_id=req.session_id,
+                    input=req.message,
+                    metadata={"intent": intent, "doc_count": len(valid_doc_ids)},
+                )
+                ret_span = trace.span(
+                    name="retrieval",
+                    input={"query": retrieval_query[:200]},
+                )
+                ret_span.end(output={
+                    "chunks": len(chunks),
+                    "top_similarity": ret_meta[0]["similarity"] if ret_meta else 0,
+                })
+            except Exception:
+                trace = None
+
         # Event 1 — retrieval metadata + routing decision + session info
         stats = session_stats(req.session_id)
         yield f"data: {json.dumps({'type': 'retrieval_meta', 'chunks': ret_meta, 'routed_to': AGENT_LABELS[intent], 'intent': intent, 'session': stats})}\n\n"
 
         final_response = []
+        eval_scores    = None
 
         try:
-            loop = asyncio.get_event_loop()
-
             # ── Step 1: run specialist agent silently, collect draft ──
             def _extract(chunk) -> str:
                 """Safely extract text from an agno streaming chunk."""
@@ -280,6 +325,16 @@ async def chat(request: Request, req: ChatRequest):
                     if isinstance(c, str):
                         return c
                 return ""
+
+            spec_span = None
+            if trace:
+                try:
+                    spec_span = trace.span(
+                        name=f"specialist-{intent}",
+                        input={"message": req.message[:200]},
+                    )
+                except Exception:
+                    pass
 
             def run_specialist():
                 return list(agent.run(
@@ -308,11 +363,27 @@ async def chat(request: Request, req: ChatRequest):
                 else:
                     draft = "I found some content in your documents but was unable to generate a response. Please try rephrasing your question."
 
+            if spec_span:
+                try:
+                    spec_span.end(output={"draft_length": len(draft)})
+                except Exception:
+                    pass
+
             # ── Step 2: signal consolidation starting ─────────────────
             yield f"data: {json.dumps({'type': 'consolidating'})}\n\n"
 
             # ── Step 3: run consolidator and stream its output ────────
             consolidator = create_consolidator_agent(req.message, draft)
+
+            cons_span = None
+            if trace:
+                try:
+                    cons_span = trace.span(
+                        name="consolidator",
+                        input={"draft_length": len(draft)},
+                    )
+                except Exception:
+                    pass
 
             def run_consolidator():
                 return list(consolidator.run(
@@ -333,6 +404,28 @@ async def chat(request: Request, req: ChatRequest):
                 final_response.append(draft)
                 yield f"data: {json.dumps({'type': 'content', 'content': draft})}\n\n"
 
+            if cons_span:
+                try:
+                    cons_span.end(output={"response_length": len("".join(final_response))})
+                except Exception:
+                    pass
+
+            # ── Step 4: compute eval scores (Faithfulness + Relevancy) ─
+            yield f"data: {json.dumps({'type': 'evaluating'})}\n\n"
+
+            def _run_eval():
+                return ragas_evaluate(
+                    req.message,
+                    "".join(final_response),
+                    context,
+                    os.getenv("GROQ_API_KEY", ""),
+                )
+
+            try:
+                eval_scores = await loop.run_in_executor(None, _run_eval)
+            except Exception:
+                eval_scores = {"faithfulness": None, "answer_relevancy": None}
+
         except Exception as e:
             yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
         finally:
@@ -342,6 +435,36 @@ async def chat(request: Request, req: ChatRequest):
                     req.message,
                     "".join(final_response),
                 )
+
+        # ── Step 5: push scores to Langfuse + emit SSE event ──────────
+        if eval_scores is not None:
+            if trace:
+                try:
+                    if eval_scores.get("faithfulness") is not None:
+                        trace.score(
+                            name="faithfulness",
+                            value=eval_scores["faithfulness"],
+                            comment="Real-time RAG evaluation",
+                        )
+                    if eval_scores.get("answer_relevancy") is not None:
+                        trace.score(
+                            name="answer_relevancy",
+                            value=eval_scores["answer_relevancy"],
+                            comment="Embedding cosine similarity",
+                        )
+                    trace.update(output="".join(final_response))
+                    lf.flush()
+                except Exception:
+                    pass
+
+            project_id    = os.getenv("LANGFUSE_PROJECT_ID", "")
+            langfuse_host = os.getenv("LANGFUSE_HOST", "https://cloud.langfuse.com")
+            langfuse_url  = (
+                f"{langfuse_host}/project/{project_id}/sessions/{req.session_id}"
+                if project_id else None
+            )
+
+            yield f"data: {json.dumps({'type': 'eval_scores', 'scores': eval_scores, 'langfuse_url': langfuse_url})}\n\n"
 
         yield "data: [DONE]\n\n"
 

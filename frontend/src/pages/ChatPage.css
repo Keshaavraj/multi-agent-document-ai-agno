@@ -819,6 +819,93 @@
 /* ── Sidebar backdrop (mobile only) ── */
 .sidebar-backdrop { display: none; }
 
+/* ── Evaluating indicator ── */
+.evaluating-indicator {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  font-style: italic;
+  margin-top: 0.6rem;
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+/* ── Eval scores block ── */
+.eval-scores {
+  margin-top: 0.8rem;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-secondary);
+}
+
+.eval-scores-header {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-secondary);
+  margin-bottom: 0.55rem;
+}
+
+.eval-scores-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.eval-score-row {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.eval-score-label {
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  width: 112px;
+  flex-shrink: 0;
+}
+
+.eval-score-track {
+  flex: 1;
+  height: 5px;
+  background: var(--border);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.eval-score-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.6s ease;
+}
+
+.eval-score-val {
+  font-size: 0.72rem;
+  font-weight: 700;
+  width: 32px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.langfuse-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-top: 0.55rem;
+  font-size: 0.72rem;
+  color: var(--accent-blue);
+  text-decoration: none;
+  opacity: 0.85;
+  transition: opacity 0.15s;
+}
+.langfuse-link:hover { opacity: 1; text-decoration: underline; }
+
 /* ── Responsive ── */
 @media (max-width: 680px) {
 

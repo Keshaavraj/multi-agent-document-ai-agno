@@ -12,7 +12,10 @@ import {
   FiZap, FiSearch, FiCheckCircle, FiXCircle, FiLoader,
   FiClock, FiCheckSquare, FiSettings, FiRefreshCw,
   FiClipboard, FiImage, FiType, FiBarChart2, FiHash, FiKey,
+  FiActivity, FiExternalLink,
 } from 'react-icons/fi'
+
+const scoreColor = (v) => v >= 0.8 ? '#3fb950' : v >= 0.6 ? '#f0883e' : '#f85149'
 
 const BACKEND = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000'
 
@@ -62,11 +65,13 @@ export default function ChatPage() {
 
   // Metrics
   const [metrics, setMetrics] = useState({
-    lastResponse: 0,
-    avgResponse:  0,
-    totalTokens:  0,
-    totalMsgs:    0,
-    responseTimes: [],
+    lastResponse:      0,
+    avgResponse:       0,
+    totalTokens:       0,
+    totalMsgs:         0,
+    responseTimes:     [],
+    lastFaithfulness:  null,
+    lastRelevancy:     null,
   })
 
   const isProcessing  = docStatus && (docStatus.status === 'uploading' || docStatus.status === 'processing')
@@ -364,6 +369,27 @@ export default function ChatPage() {
               ))
             }
 
+            if (event.type === 'evaluating') {
+              setMessages(prev => prev.map(m =>
+                m.id === assistantId ? { ...m, evaluating: true } : m
+              ))
+            }
+
+            if (event.type === 'eval_scores') {
+              setMessages(prev => prev.map(m =>
+                m.id === assistantId
+                  ? { ...m, evalScores: event.scores, langfuseUrl: event.langfuse_url, evaluating: false }
+                  : m
+              ))
+              if (event.scores) {
+                setMetrics(prev => ({
+                  ...prev,
+                  lastFaithfulness: event.scores.faithfulness,
+                  lastRelevancy:    event.scores.answer_relevancy,
+                }))
+              }
+            }
+
             if (event.type === 'error') {
               setMessages(prev => prev.map(m =>
                 m.id === assistantId
@@ -454,6 +480,31 @@ export default function ChatPage() {
             <div className="metric"><span className="metric-label">Messages</span><span className="metric-value">{metrics.totalMsgs}</span></div>
           </div>
         </div>
+
+        {/* RAG Eval scores */}
+        {(metrics.lastFaithfulness != null || metrics.lastRelevancy != null) && (
+          <div className="sidebar-section">
+            <h3 className="sidebar-section-title"><FiActivity size={12} /> RAG Eval (last query)</h3>
+            <div className="metrics-grid">
+              {metrics.lastFaithfulness != null && (
+                <div className="metric">
+                  <span className="metric-label">Faithfulness</span>
+                  <span className="metric-value" style={{ color: scoreColor(metrics.lastFaithfulness) }}>
+                    {(metrics.lastFaithfulness * 100).toFixed(0)}%
+                  </span>
+                </div>
+              )}
+              {metrics.lastRelevancy != null && (
+                <div className="metric">
+                  <span className="metric-label">Relevancy</span>
+                  <span className="metric-value" style={{ color: scoreColor(metrics.lastRelevancy) }}>
+                    {(metrics.lastRelevancy * 100).toFixed(0)}%
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Active agents */}
         <div className="sidebar-section">
@@ -692,6 +743,52 @@ export default function ChatPage() {
                       </ReactMarkdown>
                     </div>
                   )}
+                  {msg.evaluating && !msg.evalScores && (
+                    <div className="evaluating-indicator">
+                      <FiLoader size={11} /> Evaluating response quality…
+                    </div>
+                  )}
+
+                  {msg.evalScores && (
+                    <div className="eval-scores">
+                      <div className="eval-scores-header">
+                        <FiActivity size={11} /> RAG Evaluation
+                      </div>
+                      <div className="eval-scores-body">
+                        {[
+                          { label: 'Faithfulness',     key: 'faithfulness' },
+                          { label: 'Answer Relevancy', key: 'answer_relevancy' },
+                        ].map(({ label, key }) => {
+                          const v = msg.evalScores[key]
+                          return v != null ? (
+                            <div key={key} className="eval-score-row">
+                              <span className="eval-score-label">{label}</span>
+                              <div className="eval-score-track">
+                                <div
+                                  className="eval-score-fill"
+                                  style={{ width: `${(v * 100).toFixed(0)}%`, background: scoreColor(v) }}
+                                />
+                              </div>
+                              <span className="eval-score-val" style={{ color: scoreColor(v) }}>
+                                {(v * 100).toFixed(0)}%
+                              </span>
+                            </div>
+                          ) : null
+                        })}
+                      </div>
+                      {msg.langfuseUrl && (
+                        <a
+                          href={msg.langfuseUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="langfuse-link"
+                        >
+                          <FiExternalLink size={11} /> View session in Langfuse
+                        </a>
+                      )}
+                    </div>
+                  )}
+
                   {msg.prompts && msg.prompts.length > 0 && (
                     <div className="suggestion-btns">
                       {msg.prompts.map((p, pi) => (
