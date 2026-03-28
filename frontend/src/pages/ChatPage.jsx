@@ -4,6 +4,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import axios from 'axios'
 import PDFUploader from '../components/PDFUploader'
+import ChartBlock from '../components/ChartBlock'
 import { getSession, saveSelectedDocs, saveSidebarState, clearSessionMemory } from '../utils/session'
 import './ChatPage.css'
 import {
@@ -19,6 +20,11 @@ import * as XLSX from 'xlsx'
 const scoreColor = (v) => v >= 0.8 ? '#3fb950' : v >= 0.6 ? '#f0883e' : '#f85149'
 
 const hasMarkdownTable = (text) => /\|.+\|/.test(text)
+
+const extractChartSpecs = (text) => {
+  const matches = [...text.matchAll(/```chart\s*([\s\S]*?)```/g)]
+  return matches.map(m => m[1].trim()).filter(Boolean)
+}
 
 const parseMarkdownTables = (content) => {
   const tables = []
@@ -83,6 +89,7 @@ const AGENT_COLORS = {
   'Summary Agent': '#a371f7',
   'Analyst Agent': '#f0883e',
   'Invoice Agent': '#3fb950',
+  'Chart Agent':   '#58a6ff',
 }
 
 const QUICK_PROMPTS = [
@@ -611,6 +618,7 @@ export default function ChatPage() {
                     {name === 'Summary Agent' && 'Document Overview'}
                     {name === 'Analyst Agent' && 'Data Extraction'}
                     {name === 'Invoice Agent' && 'Bills & Invoices'}
+                    {name === 'Chart Agent'   && 'Data Visualization'}
                   </div>
                 </div>
               </div>
@@ -841,6 +849,10 @@ export default function ChatPage() {
                       </ReactMarkdown>
                     </div>
                   )}
+                  {msg.content && !msg.loading && extractChartSpecs(msg.content).map((spec, i) => (
+                    <ChartBlock key={i} spec={spec} />
+                  ))}
+
                   {msg.content && hasMarkdownTable(msg.content) && !msg.loading && (
                     <div className="export-btns">
                       <span className="export-label"><FiDownload size={11} /> Export</span>

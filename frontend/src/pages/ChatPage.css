@@ -819,6 +819,23 @@
 /* ── Sidebar backdrop (mobile only) ── */
 .sidebar-backdrop { display: none; }
 
+/* ── Chart block ── */
+.chart-block {
+  margin: 0.8rem 0;
+  padding: 1rem;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.chart-title {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 0.8rem;
+  text-align: center;
+}
+
 /* ── Export buttons ── */
 .export-btns {
   display: flex;

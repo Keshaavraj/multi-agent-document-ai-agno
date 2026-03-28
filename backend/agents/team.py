@@ -14,6 +14,7 @@ from agno.models.groq import Groq as GroqModel
 from agents.rag_agent import create_rag_agent
 from agents.summary_agent import create_summary_agent
 from agents.analyst_agent import create_analyst_agent
+from agents.chart_agent import create_chart_agent
 
 ORCHESTRATOR_MODEL = "llama-3.3-70b-versatile"
 
@@ -35,6 +36,12 @@ SUMMARY_KEYWORDS = {
     "summarise", "summarize", "summary", "overview", "brief", "tldr",
     "key points", "main topics", "what is this about", "what is this document",
     "introduction", "outline",
+}
+CHART_KEYWORDS = {
+    "chart", "graph", "plot", "visualize", "visualise", "visualization",
+    "bar chart", "pie chart", "line chart", "line graph", "bar graph",
+    "show me a chart", "draw a chart", "create a chart", "generate a chart",
+    "trend graph", "show graphically", "visual representation",
 }
 INVOICE_KEYWORDS = {
     "invoice", "bill", "receipt", "quotation", "purchase order", "po number",
@@ -60,6 +67,8 @@ def classify_intent(message: str) -> str:
     lower = message.lower()
     if any(k in lower for k in SUMMARY_KEYWORDS):
         return "summary"
+    if any(k in lower for k in CHART_KEYWORDS):
+        return "chart"
     if any(k in lower for k in INVOICE_KEYWORDS):
         return "invoice"
     if any(k in lower for k in ANALYST_KEYWORDS):

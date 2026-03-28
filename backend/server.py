@@ -22,6 +22,7 @@ from agents.summary_agent import create_summary_agent
 from agents.analyst_agent import create_analyst_agent
 from agents.consolidator_agent import create_consolidator_agent
 from agents.invoice_agent import create_invoice_agent
+from agents.chart_agent import create_chart_agent
 from agents.team import classify_intent
 from evaluation.ragas_eval import evaluate as ragas_evaluate
 
@@ -111,6 +112,7 @@ AGENT_LABELS = {
     "summary": "Summary Agent",
     "analyst": "Analyst Agent",
     "invoice": "Invoice Agent",
+    "chart":   "Chart Agent",
 }
 
 
@@ -361,6 +363,8 @@ async def chat(request: Request, req: ChatRequest):
     # Route directly to the right agent — avoids fragile LLM tool-call routing
     if intent == "summary":
         agent = create_summary_agent(context)
+    elif intent == "chart":
+        agent = create_chart_agent(context)
     elif intent == "invoice":
         agent = create_invoice_agent(context)
     elif intent == "analyst":

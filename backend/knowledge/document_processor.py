@@ -103,14 +103,44 @@ def _process_txt(file_bytes: bytes, filename: str) -> DocumentResult:
 
 # ── Image (PNG / JPG) ─────────────────────────────────────────────────────────
 
+MAX_IMAGE_PX = 1920   # longest side — keeps base64 payload under ~1 MB
+
+def _normalise_image(file_bytes: bytes) -> bytes:
+    """
+    Resize + EXIF-orient a mobile photo so it is safe to send to Groq vision.
+    Returns optimised JPEG bytes regardless of input format.
+    """
+    from PIL import Image, ImageOps
+    import io as _io
+
+    img = Image.open(_io.BytesIO(file_bytes))
+
+    # Fix EXIF rotation (portrait photos from phones arrive sideways)
+    img = ImageOps.exif_transpose(img)
+
+    # Convert palette / RGBA modes to RGB for JPEG output
+    if img.mode not in ("RGB", "L"):
+        img = img.convert("RGB")
+
+    # Resize if either dimension exceeds the limit
+    w, h = img.size
+    if max(w, h) > MAX_IMAGE_PX:
+        scale = MAX_IMAGE_PX / max(w, h)
+        img = img.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
+
+    buf = _io.BytesIO()
+    img.save(buf, format="JPEG", quality=85, optimize=True)
+    return buf.getvalue()
+
+
 def _process_image(file_bytes: bytes, filename: str, ext: str) -> DocumentResult:
     """
-    Convert a single image to a 1-page PDF so the existing OCR pipeline
-    (PyMuPDF + Llama 4 Scout) handles it without any special-casing.
+    Normalise (resize + orient) then convert the image to a 1-page PDF so the
+    existing OCR pipeline (PyMuPDF + Llama 4 Scout) handles it.
     """
-    filetype = "jpeg" if ext in (".jpg", ".jpeg") else ext.lstrip(".")
-    img_doc  = fitz.open(stream=file_bytes, filetype=filetype)
-    pdf_bytes = img_doc.convert_to_pdf()
+    normalised = _normalise_image(file_bytes)
+    img_doc    = fitz.open(stream=normalised, filetype="jpeg")
+    pdf_bytes  = img_doc.convert_to_pdf()
     img_doc.close()
 
     # process_pdf will flag the page as scanned (no text), OCR runs automatically
