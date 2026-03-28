@@ -148,6 +148,33 @@ async def health():
     }
 
 
+# ── Langfuse connection test ───────────────────────────────
+@app.get("/api/langfuse-test")
+async def langfuse_test():
+    pk = os.getenv("LANGFUSE_PUBLIC_KEY")
+    sk = os.getenv("LANGFUSE_SECRET_KEY")
+    host = os.getenv("LANGFUSE_HOST", "https://cloud.langfuse.com")
+    project_id = os.getenv("LANGFUSE_PROJECT_ID", "")
+
+    if not pk or not sk:
+        return {"status": "error", "reason": "LANGFUSE_PUBLIC_KEY or LANGFUSE_SECRET_KEY not set in env"}
+
+    try:
+        from langfuse import Langfuse
+        lf = Langfuse(public_key=pk, secret_key=sk, host=host)
+        trace = lf.trace(name="connection-test", input="ping")
+        trace.update(output="pong")
+        lf.flush()
+        return {
+            "status": "ok",
+            "host": host,
+            "project_id": project_id,
+            "pk_prefix": pk[:12] + "...",
+        }
+    except Exception as e:
+        return {"status": "error", "reason": str(e)}
+
+
 # ── Background processor ──────────────────────────────────
 async def _process_upload(job_id: str, raw: bytes, filename: str, session_id: str):
     """
