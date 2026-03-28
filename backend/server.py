@@ -54,6 +54,15 @@ app = FastAPI(title="Doc Intelligence AI", version="1.0.0")
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
+@app.on_event("shutdown")
+def _flush_langfuse():
+    lf = _get_langfuse()
+    if lf:
+        try:
+            lf.flush()
+        except Exception:
+            pass
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -453,7 +462,7 @@ async def chat(request: Request, req: ChatRequest):
                             comment="Embedding cosine similarity",
                         )
                     trace.update(output="".join(final_response))
-                    lf.flush()
+                    await loop.run_in_executor(None, lf.flush)
                 except Exception:
                     pass
 
