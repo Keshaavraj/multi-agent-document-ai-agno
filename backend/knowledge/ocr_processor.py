@@ -63,6 +63,18 @@ def _ocr_one(page_num: int, b64: str) -> tuple[int, str]:
     return page_num, resp.choices[0].message.content.strip()
 
 
+def ocr_image_direct(b64: str) -> tuple[bool, str]:
+    """
+    Try to OCR a single base64 JPEG directly via Groq vision.
+    Returns (success, text). On failure returns (False, error_reason).
+    """
+    try:
+        _, text = _ocr_one(1, b64)
+        return True, text
+    except Exception as e:
+        return False, str(e)
+
+
 def ocr_scanned_pages(pdf_bytes: bytes, pages: list) -> list:
     """
     OCR scanned pages concurrently (all API calls in parallel).

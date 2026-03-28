@@ -6,11 +6,13 @@ Supported: PDF, DOCX/DOC, TXT, PNG, JPG/JPEG
 
 import uuid
 import io
+import base64
 from pathlib import Path
 
 import fitz  # PyMuPDF — handles image → PDF conversion
 
 from knowledge.pdf_processor import process_pdf, DocumentResult, PageResult
+from knowledge.ocr_processor import ocr_image_direct
 
 ALLOWED_EXTENSIONS = {".pdf", ".docx", ".doc", ".txt", ".png", ".jpg", ".jpeg"}
 MAX_TXT_PAGES      = 40   # virtual page cap for TXT/DOCX (matches PDF cap)
@@ -103,45 +105,69 @@ def _process_txt(file_bytes: bytes, filename: str) -> DocumentResult:
 
 # ── Image (PNG / JPG) ─────────────────────────────────────────────────────────
 
-MAX_IMAGE_PX = 1920   # longest side — keeps base64 payload under ~1 MB
+MAX_IMAGE_PX        = 1024   # first attempt — safe payload size for Groq vision
+MAX_IMAGE_PX_LARGE  = 1600   # fallback attempt if direct fails for non-size reasons
 
-def _normalise_image(file_bytes: bytes) -> bytes:
+
+def _normalise_image(file_bytes: bytes, max_px: int = MAX_IMAGE_PX) -> bytes:
     """
-    Resize + EXIF-orient a mobile photo so it is safe to send to Groq vision.
+    Resize + EXIF-orient a photo so it is safe to send to Groq vision.
     Returns optimised JPEG bytes regardless of input format.
     """
     from PIL import Image, ImageOps
     import io as _io
 
     img = Image.open(_io.BytesIO(file_bytes))
-
-    # Fix EXIF rotation (portrait photos from phones arrive sideways)
-    img = ImageOps.exif_transpose(img)
-
-    # Convert palette / RGBA modes to RGB for JPEG output
+    img = ImageOps.exif_transpose(img)              # fix portrait rotation
     if img.mode not in ("RGB", "L"):
         img = img.convert("RGB")
 
-    # Resize if either dimension exceeds the limit
     w, h = img.size
-    if max(w, h) > MAX_IMAGE_PX:
-        scale = MAX_IMAGE_PX / max(w, h)
+    if max(w, h) > max_px:
+        scale = max_px / max(w, h)
         img = img.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
 
     buf = _io.BytesIO()
-    img.save(buf, format="JPEG", quality=85, optimize=True)
+    img.save(buf, format="JPEG", quality=82, optimize=True)
     return buf.getvalue()
 
 
 def _process_image(file_bytes: bytes, filename: str, ext: str) -> DocumentResult:
     """
-    Normalise (resize + orient) then convert the image to a 1-page PDF so the
-    existing OCR pipeline (PyMuPDF + Llama 4 Scout) handles it.
+    Smart image processing with two-stage fallback:
+
+    Stage 1 — Direct vision (fast, no PDF overhead):
+        Normalise image → send base64 directly to Groq Llama 4 Scout.
+        Works for most images up to ~1024px.
+
+    Stage 2 — PDF OCR pipeline (fallback):
+        If direct call fails (e.g. complex layout needs higher res),
+        convert to PDF at 1600px and let the existing OCR pipeline handle it.
+        The PDF re-render uses OCR_ZOOM=1.5 but starts from a 1600px base,
+        not the original 4000px+ mobile photo.
     """
-    normalised = _normalise_image(file_bytes)
-    img_doc    = fitz.open(stream=normalised, filetype="jpeg")
-    pdf_bytes  = img_doc.convert_to_pdf()
+    doc_id = str(uuid.uuid4())
+
+    # ── Stage 1: direct Groq vision ───────────────────────────────────────────
+    normalised = _normalise_image(file_bytes, max_px=MAX_IMAGE_PX)
+    b64        = base64.b64encode(normalised).decode("utf-8")
+    success, text = ocr_image_direct(b64)
+
+    if success and text and not text.startswith("[OCR failed"):
+        page = PageResult(page_num=1, text=text, is_scanned=False)
+        return DocumentResult(
+            doc_id=doc_id, filename=filename,
+            total_pages=1, text_pages=1, scanned_pages=0,
+            pages=[page],
+        )
+
+    # ── Stage 2: PDF OCR pipeline (larger res, handles complex layouts) ────────
+    # Normalise at higher res for the PDF pipeline since zoom is applied later
+    normalised_lg = _normalise_image(file_bytes, max_px=MAX_IMAGE_PX_LARGE)
+    img_doc       = fitz.open(stream=normalised_lg, filetype="jpeg")
+    pdf_bytes     = img_doc.convert_to_pdf()
     img_doc.close()
 
-    # process_pdf will flag the page as scanned (no text), OCR runs automatically
-    return process_pdf(pdf_bytes, filename)
+    result         = process_pdf(pdf_bytes, filename)
+    result.doc_id  = doc_id          # keep the same doc_id
+    return result
